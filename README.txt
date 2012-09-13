@@ -1,3 +1,0 @@
-HELLO WORLD!
-LOL! ROFL SPAM SPAM!
-try again
