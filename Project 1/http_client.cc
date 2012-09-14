@@ -18,6 +18,9 @@ int main(int argc, char * argv[]) {
 	exit(-1);
     }
 
+	
+	
+	
     server_name = argv[2];
     server_port = atoi(argv[3]);
     server_path = argv[4];
