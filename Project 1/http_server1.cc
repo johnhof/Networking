@@ -15,6 +15,8 @@ int main(int argc, char * argv[]) {
     int sock        = -1;
     char* serverName;
     sockaddr_in socket;
+    struct sockaddr_in severAddr;
+    int backLog = 0;
 
 /*--parse command line args-----------------------------------------------------*/
     if (argc != 3) {
@@ -47,13 +49,18 @@ int main(int argc, char * argv[]) {
         perror("Socket not created");
         exit(1);
     }
+
 /*--set server address----------------------------------------------------------*/
 
+    serverAddr = ;
 
 /*--bind listening socket-------------------------------------------------------*/
     
     minet_bind(serverPort,serverAddr);
+
 /*--start listening-------------------------------------------------------------*/
+
+    minet_listen(serverPort, backLog);
 
 /*--connection handling loop: wait to accept connection-------------------------*/
 
@@ -77,9 +84,10 @@ int handle_connection(int sock) {
 	"</body></html>\n";
     
 /*--first read loop -- get request and headers-----------------------------------*/
-   
+   while(minet_accept(serverPort, serverAddr));
+
 /*--parse request to get file ---------------------------------------------------*/
-/*--Assumption: this is a GET request and filename contains no spaces------------*/
+/*Assumption: this is a GET request and filename contains no spaces*/
 
 /*--try opening the file---------------------------------------------------------*/
 
