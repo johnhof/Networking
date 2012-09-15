@@ -10,32 +10,52 @@
 int handle_connection(int sock);
 
 int main(int argc, char * argv[]) {
-    int server_port = -1;
+    int serverPort = -1;
     int rc          =  0;
     int sock        = -1;
+    char* serverName;
+    sockaddr_in socket;
 
-    /* parse command line args */
+/*--parse command line args-----------------------------------------------------*/
     if (argc != 3) {
 	fprintf(stderr, "usage: http_server1 k|u port\n");
 	exit(-1);
     }
 
-    server_port = atoi(argv[2]);
+    serverName = argv[0];
 
-    if (server_port < 1500) {
-	fprintf(stderr, "INVALID PORT NUMBER: %d; can't be < 1500\n", server_port);
+    serverPort = atoi(argv[2]);
+
+    if (serverPort < 1500) {
+	fprintf(stderr, "INVALID PORT NUMBER: %d; can't be < 1500\n", serverPort);
 	exit(-1);
     }
 
-    /* initialize and make socket */
+/*--initialize and make socket---------------------------------------------------*/
 
-    /* set server address*/
+    if (toupper(*(argv[1])) == 'K') minet_init(MINET_KERNEL);
+    else if (toupper(*(argv[1])) == 'U') minet_init(MINET_USER);
+    else {
+        fprintf(stderr, "First argument must be k or u\n");
+        exit(-1);
+    }
 
-    /* bind listening socket */
+    socket = minet_socket(SOCK_STREAM);
 
-    /* start listening */
+    if(socket < 0)
+    { //Socket didn't work.
+        perror("Socket not created");
+        exit(1);
+    }
+/*--set server address----------------------------------------------------------*/
 
-    /* connection handling loop: wait to accept connection */
+
+/*--bind listening socket-------------------------------------------------------*/
+    
+    minet_bind(serverPort,serverAddr);
+/*--start listening-------------------------------------------------------------*/
+
+/*--connection handling loop: wait to accept connection-------------------------*/
 
     while (1) {
 	/* handle connections */
@@ -56,26 +76,27 @@ int handle_connection(int sock) {
 	"<h2>404 FILE NOT FOUND</h2>\n"
 	"</body></html>\n";
     
-    /* first read loop -- get request and headers*/
-    
-    /* parse request to get file name */
-    /* Assumption: this is a GET request and filename contains no spaces*/
+/*--first read loop -- get request and headers-----------------------------------*/
+   
+/*--parse request to get file ---------------------------------------------------*/
+/*--Assumption: this is a GET request and filename contains no spaces------------*/
 
-    /* try opening the file */
+/*--try opening the file---------------------------------------------------------*/
 
-    /* send response */
+/*--send response----------------------------------------------------------------*/
     if (ok) {
-	/* send headers */
+/*--send headers-----------------------------------------------------------------*/
 	
-	/* send file */
+/*--send file--------------------------------------------------------------------*/
 	
     } else {
-	// send error response
+// send error response
     }
     
-    /* close socket and free space */
+ /*--close socket and free space-------------------------------------------------*/
   
     if (ok) {
+        minet_deinit();
 	return 0;
     } else {
 	return -1;
