@@ -12,7 +12,6 @@ int main(int argc, char * argv[]) {
     char * req         = NULL;
     bool ok            = false;
 	int socket_fd;
-	char * server_name = NULL;
 
     /*parse args */
     if (argc != 5) {
@@ -42,13 +41,21 @@ int main(int argc, char * argv[]) {
 	socket_fd = minet_socket(SOCK_STREAM);
 	
 	if(socket_fd < 0){
-		perror("Socket Not Created");
+		minet_perror("Socket Not Created");
 		exit(1);
 	}
 	
     /* get host IP address  */
     /* Hint: use gethostbyname() */
+	// hostent is the struct that is returned by gethostbyname(). Host_address
+	// is the struct name that is going to hold all the information that is returned
+	hostent * host_address = gethostbyname(server_name);
 
+	if(host_address == null){
+		minet_perror("host not found");
+		exit(2);
+	}
+	
     /* set address */
 
     /* connect to the server socket */
