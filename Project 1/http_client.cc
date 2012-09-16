@@ -6,12 +6,17 @@
 
 int main(int argc, char * argv[]) {
 
+	fd_set read_sock;
+	char buffer[BUFSIZE];
     char * server_name = NULL;
     int server_port    = -1;
     char * server_path = NULL;
     char * req         = NULL;
     bool ok            = false;
+	int req_length;
+	int num_sent;
 	int socket_fd;
+	int client_socket;
 
     /*parse args */
     if (argc != 5) {
@@ -47,9 +52,9 @@ int main(int argc, char * argv[]) {
 	
     /* get host IP address  */
     /* Hint: use gethostbyname() */
-	// hostent is the struct that is returned by gethostbyname(). Host_address
+	// hostent is the struct that is returned by gethostbyname(). host_addr
 	// is the struct name that is going to hold all the information that is returned
-	hostent * host_address = gethostbyname(server_name);
+	hostent * host_addr = gethostbyname(server_name);
 
 	if(host_address == null){
 		minet_perror("host not found");
@@ -57,15 +62,54 @@ int main(int argc, char * argv[]) {
 	}
 	
     /* set address */
+	memcpy(&server_socket.sin_addr, host_addr->h_addr_list[0], host_addr->h_length);
+	server_socket.sin_family = AF_INET;
+	server_socket.sin_port = htons(server_port);
 
     /* connect to the server socket */
+	
+	client_socket = minet_connect(socket_fd, &server_socket);
+	if(client_socket < 0) {
+		minet_perror("could not connect");
+		exit(3);
+	}
 
     /* send request message */
     sprintf(req, "GET %s HTTP/1.0\r\n\r\n", server_path);
+	req_length = strlen(req);
+	
+	// while there is still stuff to send
+	while(req_length > 0){
+		// write and save length written
+		num_sent = minet_write(client_socket, req, len);
+		
+		// if it didn't sent anything, error
+		if(num_sent < 0){
+			minet_perror("could not send request");
+			exit(4);
+		}
+		
+		// request length minus the total amount sent
+		req_length -= num_sent;
+	}
 
     /* wait till socket can be read. */
     /* Hint: use select(), and ignore timeout for now. */
-
+	
+	// have the fd be 0's
+	FD_ZERO(&read_sock);
+	
+	// set the fd
+	FD_SET(client_socket, $read_sock);
+	
+	// no set timeout so it will wait until it is ready
+	int select_current = minet_select(sizeof(read_sock)*8, &read_sock, NULL, NULL, NULL);
+	
+	if(select_current < 0){
+		minet_perror("select failed");
+		exit(5);
+	}
+	
     /* first read loop -- read headers */
 
     /* examine return code */   
@@ -80,10 +124,11 @@ int main(int argc, char * argv[]) {
     /* second read loop -- print out the rest of the response: real web content */
 
     /*close socket and deinitialize */
-
+	minet_close(client_socket);
+	free(req);
     if (ok) {
-	return 0;
+		return 0;
     } else {
-	return -1;
+		return -1;
     }
 }
