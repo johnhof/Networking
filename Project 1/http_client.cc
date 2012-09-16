@@ -1,7 +1,7 @@
 #include "minet_socket.h"
 #include <stdlib.h>
 #include <ctype.h>
-
+#include <unistd.h> //for sock_addr
 #define BUFSIZE 1024
 
 int main(int argc, char * argv[]) {
@@ -11,6 +11,8 @@ int main(int argc, char * argv[]) {
     char * server_path = NULL;
     char * req         = NULL;
     bool ok            = false;
+	int socket_fd;
+	char * server_name = NULL;
 
     /*parse args */
     if (argc != 5) {
@@ -37,6 +39,13 @@ int main(int argc, char * argv[]) {
 
     /* make socket */
 
+	socket_fd = minet_socket(SOCK_STREAM);
+	
+	if(socket_fd < 0){
+		perror("Socket Not Created");
+		exit(1);
+	}
+	
     /* get host IP address  */
     /* Hint: use gethostbyname() */
 
