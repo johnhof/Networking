@@ -12,11 +12,10 @@ int handle_connection(int sock);
 int main(int argc, char * argv[]) {
     int serverPort = -1;
     int rc          =  0;
-    int sock        = -1;
     char* serverName;
-    sockaddr_in socket;
+    int serverSocket = -1;
     struct sockaddr_in severAddr;
-    int backLog = 0;
+    int backLog = 5;
 
 /*--parse command line args-----------------------------------------------------*/
     if (argc != 3) {
@@ -25,7 +24,6 @@ int main(int argc, char * argv[]) {
     }
 
     serverName = argv[0];
-
     serverPort = atoi(argv[2]);
 
     if (serverPort < 1500) {
@@ -42,21 +40,25 @@ int main(int argc, char * argv[]) {
         exit(-1);
     }
 
-    socket = minet_socket(SOCK_STREAM);
+    serverSocket = minet_socket(SOCK_STREAM);//create the socket
 
-    if(socket < 0)
-    { //Socket didn't work.
+    //socket error
+    if(serverSocket < 0)
+    { 
         perror("Socket not created");
         exit(1);
     }
 
 /*--set server address----------------------------------------------------------*/
 
-    serverAddr = ;
+    memset(&serverAddr.sin_addr, 0, sizeof(serverAddr));
+    serverAddr.sin_port = htons(serverPort);//Set the Port
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY); //Support any IP
+    serverAddr.sin_family = AF_INET;//set to IP family
 
 /*--bind listening socket-------------------------------------------------------*/
     
-    minet_bind(serverPort,serverAddr);
+    minet_bind(serverSocket,serverAddr,sizeof(serverAddr));
 
 /*--start listening-------------------------------------------------------------*/
 
@@ -65,12 +67,21 @@ int main(int argc, char * argv[]) {
 /*--connection handling loop: wait to accept connection-------------------------*/
 
     while (1) {
+    int incomingSocket -1;
+    struct sockaddr_in incomingAddr;
+
+    int incomingSocket = accept(serverSocket, (struct sockaddr *)&incomingAddr, sizeof(incomingAddr));
+
 	/* handle connections */
-	rc = handle_connection(sock);
+	rc = handle_connection(incomingSocket);
     }
 }
 
-int handle_connection(int sock) {
+/*-----------------------------------------------------------------------------*/
+/*HANDLE CONNECTION*/
+/*-----------------------------------------------------------------------------*/
+
+int handle_connection(int serverSocket) {
     bool ok = false;
 
     char * ok_response_f = "HTTP/1.0 200 OK\r\n"	\
@@ -84,19 +95,26 @@ int handle_connection(int sock) {
 	"</body></html>\n";
     
 /*--first read loop -- get request and headers-----------------------------------*/
-   while(minet_accept(serverPort, serverAddr));
+   
 
 /*--parse request to get file ---------------------------------------------------*/
 /*Assumption: this is a GET request and filename contains no spaces*/
+    buf[BUFSIZE-1] = '\0'; //Add this to the end so it can print as a string.
+    int bytesRead = minet_read(client_socket, buf, BUFSIZE-1);
+    printf("bytesread= %d\n", bytesRead);
+    if(bytesRead < 0 || bytesRead >= 12){
+        perror("Couldn't read");
+        exit(1);
+    }
 
 /*--try opening the file---------------------------------------------------------*/
 
 /*--send response----------------------------------------------------------------*/
     if (ok) {
 /*--send headers-----------------------------------------------------------------*/
-	
+	minet_read();
 /*--send file--------------------------------------------------------------------*/
-	
+	minet_write();
     } else {
 // send error response
     }
@@ -104,6 +122,7 @@ int handle_connection(int sock) {
  /*--close socket and free space-------------------------------------------------*/
   
     if (ok) {
+        minet_close(serverSocket);
         minet_deinit();
 	return 0;
     } else {
