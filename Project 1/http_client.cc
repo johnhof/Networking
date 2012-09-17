@@ -17,6 +17,7 @@ int main(int argc, char * argv[]) {
 	int num_sent;
 	int socket_fd;
 	int client_socket;
+	char return_code[3];
 
     /*parse args */
     if (argc != 5) {
@@ -111,18 +112,44 @@ int main(int argc, char * argv[]) {
 	}
 	
     /* first read loop -- read headers */
+	buf[BUFSIZE-1] = '\0';
+	int bytes_read = minet_read(client_socket, buf, BUFSIZE-1);
+	printf("bytesread= %d\n", bytes_read);
+	if(bytes_read < 0 || byte_read >= 12){
+		minut_perror("Couldn't read");
+		exit(6);
+	}
 
-    /* examine return code */   
+    /* examine return code */
 
     //Skip "HTTP/1.0"
     //remove the '\0'
 
-    // Normal reply has return code 200
+    // Normal reply has return code 200	
+	return_code[0]= buffer[9];
+	return_code[1]= buffer[10];
+	return_code[2]= buffer[11];
+	int return_code_i = atoi(return_code);
+	if(return_code_i == 200){
+		ok = true;
+	}
 
     /* print first part of response: header, error code, etc. */
-
+	printf("%s", buffer);	
+	
     /* second read loop -- print out the rest of the response: real web content */
-
+	do{
+		bytes_read = minet_read(client_socket, buffer, BUFSIZE);
+		if(bytes_read < 0){
+			minut_perror("Couldn't read");
+			exit(1);
+		}
+		printf("%s", buffer);
+		printf("read is %d\n", bytes_read);
+	}while(read > 0);
+/*close socket and deinitialize */
+	minet_close(client_socket);
+	free(req);
     /*close socket and deinitialize */
 	minet_close(client_socket);
 	free(req);
