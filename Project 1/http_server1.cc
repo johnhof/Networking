@@ -14,8 +14,9 @@ int main(int argc, char * argv[]) {
     int rc          =  0;
     char* serverName;
     int serverSocket = -1;
-    struct sockaddr_in severAddr;
+    struct sockaddr_in serverAddr;
     int backLog = 5;
+    int incomingSocket -1;
 
 /*--parse command line args-----------------------------------------------------*/
     if (argc != 3) {
@@ -58,7 +59,8 @@ int main(int argc, char * argv[]) {
 
 /*--bind listening socket-------------------------------------------------------*/
     
-    minet_bind(serverSocket,serverAddr,sizeof(serverAddr));
+    //minet_bind(serverSocket,&serverAddr,sizeof(serverAddr));
+    minet_bind(serverSocket,&serverAddr);
 
 /*--start listening-------------------------------------------------------------*/
 
@@ -67,10 +69,10 @@ int main(int argc, char * argv[]) {
 /*--connection handling loop: wait to accept connection-------------------------*/
 
     while (1) {
-    int incomingSocket -1;
+    int incomingSocket = -1;
     struct sockaddr_in incomingAddr;
 
-    int incomingSocket = accept(serverSocket, (struct sockaddr *)&incomingAddr, sizeof(incomingAddr));
+    incomingSocket = accept(serverSocket, (struct sockaddr *)&incomingAddr, sizeof(incomingAddr));
 
 	/* handle connections */
 	rc = handle_connection(incomingSocket);
