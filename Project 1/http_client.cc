@@ -7,7 +7,7 @@
 int main(int argc, char * argv[]) {
 
 	fd_set read_sock;
-	char buffer[BUFSIZE];
+	char buf[BUFSIZE];
     char * server_name = NULL;
     int server_port    = -1;
     char * server_path = NULL;
@@ -18,6 +18,8 @@ int main(int argc, char * argv[]) {
 	int socket_fd;
 	int client_socket;
 	char return_code[3];
+	hostent * host_addr;
+	sockaddr_in server_socket;
 
     /*parse args */
     if (argc != 5) {
@@ -55,9 +57,9 @@ int main(int argc, char * argv[]) {
     /* Hint: use gethostbyname() */
 	// hostent is the struct that is returned by gethostbyname(). host_addr
 	// is the struct name that is going to hold all the information that is returned
-	hostent * host_addr = gethostbyname(server_name);
+	host_addr = gethostbyname(server_name);
 
-	if(host_address == null){
+	if(host_addr == 0){
 		minet_perror("host not found");
 		exit(2);
 	}
@@ -78,11 +80,10 @@ int main(int argc, char * argv[]) {
     /* send request message */
     sprintf(req, "GET %s HTTP/1.0\r\n\r\n", server_path);
 	req_length = strlen(req);
-	
 	// while there is still stuff to send
 	while(req_length > 0){
 		// write and save length written
-		num_sent = minet_write(client_socket, req, len);
+		num_sent = minet_write(socket_fd, req, req_length);
 		
 		// if it didn't sent anything, error
 		if(num_sent < 0){
@@ -101,7 +102,7 @@ int main(int argc, char * argv[]) {
 	FD_ZERO(&read_sock);
 	
 	// set the fd
-	FD_SET(client_socket, $read_sock);
+	FD_SET(socket_fd, &read_sock);
 	
 	// no set timeout so it will wait until it is ready
 	int select_current = minet_select(sizeof(read_sock)*8, &read_sock, NULL, NULL, NULL);
@@ -113,10 +114,10 @@ int main(int argc, char * argv[]) {
 	
     /* first read loop -- read headers */
 	buf[BUFSIZE-1] = '\0';
-	int bytes_read = minet_read(client_socket, buf, BUFSIZE-1);
-	printf("bytesread= %d\n", bytes_read);
-	if(bytes_read < 0 || byte_read >= 12){
-		minut_perror("Couldn't read");
+	int bytes_read = minet_read(socket_fd, buf, BUFSIZE-1);
+	printf("bytes read = %d\n", bytes_read);
+	if(bytes_read < 0){
+		minet_perror("Couldn't read");
 		exit(6);
 	}
 
@@ -126,33 +127,32 @@ int main(int argc, char * argv[]) {
     //remove the '\0'
 
     // Normal reply has return code 200	
-	return_code[0]= buffer[9];
-	return_code[1]= buffer[10];
-	return_code[2]= buffer[11];
+	return_code[0]= buf[9];
+	return_code[1]= buf[10];
+	return_code[2]= buf[11];
 	int return_code_i = atoi(return_code);
 	if(return_code_i == 200){
 		ok = true;
 	}
 
     /* print first part of response: header, error code, etc. */
-	printf("%s", buffer);	
-	
+	printf("%s", buf);
+
     /* second read loop -- print out the rest of the response: real web content */
 	do{
-		bytes_read = minet_read(client_socket, buffer, BUFSIZE);
+		memset(buf, 0, BUFSIZE);
+		bytes_read = minet_read(socket_fd, buf, BUFSIZE);
 		if(bytes_read < 0){
-			minut_perror("Couldn't read");
+			minet_perror("Couldn't read");
 			exit(1);
 		}
-		printf("%s", buffer);
-		printf("read is %d\n", bytes_read);
-	}while(read > 0);
+		printf("%s", buf);
+		memset(buf, 0, BUFSIZE);
+	}while(bytes_read > 0);
 /*close socket and deinitialize */
+		free(req);
 	minet_close(client_socket);
-	free(req);
-    /*close socket and deinitialize */
-	minet_close(client_socket);
-	free(req);
+
     if (ok) {
 		return 0;
     } else {
