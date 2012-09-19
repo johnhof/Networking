@@ -171,7 +171,7 @@ int handle_connection(int clientSocket) {
         int sizeSent = 0;
 
         //while we have data to send
-        sizeToSend =  strlen(headerStr);
+        int sizeToSend =  strlen(headerStr);
         while(sizeSent<sizeToSend) {
             //send it
             sizeSent = minet_write(clientSocket, headerStr+sizeSent, strlen(headerStr));
@@ -187,18 +187,47 @@ int handle_connection(int clientSocket) {
 
 
 /*--send file--------------------------------------------------------------------*/
-    //minet_write();
-    } else {
-// send error response
+
+        sizeSent = 0;
+
+        //while we have data to send
+        while(sizeSent<dataFromFile.size()) {
+            string dataToSend = dataFromFile.substr(sizeSent);
+            //send it
+            sizeSent = minet_write(clientSocket, (char *)(dataToSend.c_str())+sizeSent, dataToSend.size());
+        
+            // if it didn't sent anything, error
+            if(sizeSent < 0){
+                minet_perror("No data sent");
+                return -1;
+            }
+            sizeSent++;
+        }
+    } else {//send error message
+        int sizeSent = 0;
+        sizeToSend =  strlen(notok_response);
+        while(sizeSent<sizeToSend) {
+            //send it
+            sizeSent = minet_write(clientSocket, notok_response+sizeSent, strlen(notok_response));
+        
+            // if it didn't sent anything, error
+            if(sizeSent < 0){
+                minet_perror("Could not send error");
+                return -1;
+            }
+            sizeSent++;
+        }
     }
     
  /*--close socket and free space-------------------------------------------------*/
   
+    minet_close(clientSocket);
+    free(buffer);
+    minet_deinit();
+    
     if (ok) {
-        minet_close(clientSocket);
-        free(buffer);
-    return 0;
+        return 0;
     } else {
-    return -1;
+        return -1;
     }
 }
