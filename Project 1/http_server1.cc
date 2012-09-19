@@ -170,27 +170,19 @@ int handle_connection(int clientSocket) {
         sprintf(headerStr,ok_response_f,dataFromFile.size());
         int sizeSent = 0;
 
-//////////can I just do this instead//////////////////////////////////////////////
-        sizeSent = minet_write(clientSocket, headerStr, strlen(headerStr));
-        // if it didn't sent anything, error
-        if(sizeSent < 0){
-            minet_perror("could not send header");
-            return -1;
-        }
-/*///////////////of this?/////////////////////////////////////////////////////////
         //while we have data to send
         sizeToSend =  strlen(headerStr);
-        while(sizeToSend > 0) {
+        while(sizeSent<sizeToSend) {
             //send it
-            sizeSent = minet_write(clientSocket, headerStr, strlen(headerStr));
+            sizeSent = minet_write(clientSocket, headerStr+sizeSent, strlen(headerStr));
         
             // if it didn't sent anything, error
             if(sizeSent < 0){
                 minet_perror("could not send header");
                 return -1;
             }
-            sizeToSend -= sizeSent;
-        }*/
+            sizeSent++;
+        }
 
 
 
