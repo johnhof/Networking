@@ -63,7 +63,6 @@ int main(int argc, char * argv[])
     serverAddr.sin_port = htons(serverPort);//Set the Port
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY); //Support any IP
     serverAddr.sin_family = AF_INET;//set to IP family
-    printf("Server: %d\n", serverPort);
 
 /*--bind listening socket-------------------------------------------------------*/
     
@@ -87,13 +86,14 @@ int main(int argc, char * argv[])
         struct sockaddr_in incomingAddr;
         incomingSocket = minet_accept(serverSocket, &incomingAddr);
 
+        printf("\nincomingsocket: %i\n",incomingSocket);
+
         if(incomingSocket <= 0) {
             fprintf(stderr, "No socket accepted");
             continue;
         }
         /* handle connections */
         rc = handle_connection(incomingSocket);
-        printf("where am I!?!?!?\n");
     }
     
     minet_close(serverSocket);
@@ -107,14 +107,12 @@ int main(int argc, char * argv[])
 
 int handle_connection(int clientSocket) {
     bool ok = false;
-    char * buffer;
+    char buffer [BUFSIZE];
     string headerStr;
     string filePath;
     string dataFromFile;
     int readSize;
     int sizeToSend;
-
-    memset(buffer, 0, BUFSIZE);
 
     char * ok_response_f = "HTTP/1.0 200 OK\r\n"    \
     "Content-type: text/plain\r\n"          \
@@ -142,11 +140,11 @@ int handle_connection(int clientSocket) {
         if(headerStr.compare(headerStr.size()-4,4,"\r\n\r\n")) break; //break when we read the end of the header
     }
 
-
 /*--parse request to get file ---------------------------------------------------*/
 /*Assumption: this is a GET request and filename contains no spaces*/
-   
+ 
     filePath.assign(headerStr.substr(4,headerStr.find(" ", 4)-4));//cut off "GET " and "HTTP...\n"
+
 
 /*--try opening the file---------------------------------------------------------*/
 
@@ -168,14 +166,13 @@ int handle_connection(int clientSocket) {
 /*--send response----------------------------------------------------------------*/
     if (ok) {
 /*--send headers-----------------------------------------------------------------*/
-        char * headerStr;
-        memset(headerStr, 0, dataFromFile.size()+sizeof(ok_response_f));
-
+        //char headerStr[sizeof(ok_response_f)+sizeof(dataFromFile.size())];
+        char headerStr[sizeof(ok_response_f)+dataFromFile.size()];
+        
         //insert the length of the file into our headers file size indicator
         sprintf(headerStr,ok_response_f,dataFromFile.size());
         unsigned int sizeSent = 0;
 
-        printf("sending header: %i",sizeof(headerStr));
 
         //while we have data to send
         unsigned int sizeToSend =  strlen(headerStr);
@@ -196,12 +193,14 @@ int handle_connection(int clientSocket) {
 /*--send file--------------------------------------------------------------------*/
 
         sizeSent = 0;
-
+        //printf("about to send file: %i\n",dataFromFile.size());
+        printf("about to send file\n");
         //while we have data to send
         while(sizeSent<dataFromFile.size()) {
+            printf("first time through\n");
             string dataToSend = dataFromFile.substr(sizeSent);
             //send it
-            sizeSent = minet_write(clientSocket, (char *)(dataToSend.c_str()), dataToSend.size());
+            sizeSent = minet_write(clientSocket, ((char *)(dataToSend.c_str()))+sizeSent, dataToSend.size());
         
             // if it didn't sent anything, error
             if(sizeSent < 0){
@@ -229,7 +228,6 @@ int handle_connection(int clientSocket) {
  /*--close socket and free space-------------------------------------------------*/
   
     minet_close(clientSocket);
-    free(buffer);
     minet_deinit();
     
     if (ok) {
