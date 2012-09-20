@@ -20,7 +20,7 @@ int main(int argc, char * argv[])
     char* serverName;
     int serverSocket = -1;
     struct sockaddr_in serverAddr;
-    int backlog = 10;
+    int backlog = 5;
 
 /*--parse command line args-----------------------------------------------------*/
     if (argc != 3) 
@@ -86,8 +86,14 @@ int main(int argc, char * argv[])
         int incomingSocket = -1;
         struct sockaddr_in incomingAddr;
         incomingSocket = minet_accept(serverSocket, &incomingAddr);
+
+        if(incomingSocket <= 0) {
+            fprintf(stderr, "No socket accepted");
+            continue;
+        }
         /* handle connections */
         rc = handle_connection(incomingSocket);
+        printf("where am I!?!?!?\n");
     }
     
     minet_close(serverSocket);
@@ -102,12 +108,13 @@ int main(int argc, char * argv[])
 int handle_connection(int clientSocket) {
     bool ok = false;
     char * buffer;
-    memset(buffer, 0, BUFSIZE);
     string headerStr;
     string filePath;
     string dataFromFile;
     int readSize;
     int sizeToSend;
+
+    memset(buffer, 0, BUFSIZE);
 
     char * ok_response_f = "HTTP/1.0 200 OK\r\n"    \
     "Content-type: text/plain\r\n"          \
@@ -123,7 +130,6 @@ int handle_connection(int clientSocket) {
     while(true)
     {
         readSize = minet_read(clientSocket, buffer, BUFSIZE-1);//read the first chunk of data
-        
 
         if(readSize + headerStr.size() < 4 || readSize == 0)//check header integrity
         {
@@ -131,27 +137,24 @@ int handle_connection(int clientSocket) {
             if(readSize==0)fprintf(stderr, "Header not formatted properly\n"); 
             return -1;
         }
-       
         buffer[readSize] = '\0';//add a NULL char so it can be read as a string
         headerStr.append(buffer);//append the buffer to the header string
         if(headerStr.compare(headerStr.size()-4,4,"\r\n\r\n")) break; //break when we read the end of the header
     }
 
 
-
 /*--parse request to get file ---------------------------------------------------*/
 /*Assumption: this is a GET request and filename contains no spaces*/
-
-    filePath.assign(headerStr.substr(4,headerStr.find(" ", 4)));//cut off "GET " and "HTTP...\n"
+   
+    filePath.assign(headerStr.substr(4,headerStr.find(" ", 4)-4));//cut off "GET " and "HTTP...\n"
 
 /*--try opening the file---------------------------------------------------------*/
 
     //open the file
     ifstream fileStream(filePath);
-    if(!fileStream.good())
+    if(fileStream.good())
     {
         ok = true;
-
         //allocate the array memory before copying
         fileStream.seekg(0, std::ios::end);   
         dataFromFile.reserve(fileStream.tellg());
@@ -166,12 +169,16 @@ int handle_connection(int clientSocket) {
     if (ok) {
 /*--send headers-----------------------------------------------------------------*/
         char * headerStr;
+        memset(headerStr, 0, dataFromFile.size()+sizeof(ok_response_f));
+
         //insert the length of the file into our headers file size indicator
         sprintf(headerStr,ok_response_f,dataFromFile.size());
-        int sizeSent = 0;
+        unsigned int sizeSent = 0;
+
+        printf("sending header: %i",sizeof(headerStr));
 
         //while we have data to send
-        int sizeToSend =  strlen(headerStr);
+        unsigned int sizeToSend =  strlen(headerStr);
         while(sizeSent<sizeToSend) {
             //send it
             sizeSent = minet_write(clientSocket, headerStr+sizeSent, strlen(headerStr));
@@ -194,7 +201,7 @@ int handle_connection(int clientSocket) {
         while(sizeSent<dataFromFile.size()) {
             string dataToSend = dataFromFile.substr(sizeSent);
             //send it
-            sizeSent = minet_write(clientSocket, (char *)(dataToSend.c_str())+sizeSent, dataToSend.size());
+            sizeSent = minet_write(clientSocket, (char *)(dataToSend.c_str()), dataToSend.size());
         
             // if it didn't sent anything, error
             if(sizeSent < 0){
