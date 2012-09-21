@@ -22,6 +22,18 @@ int main(int argc, char * argv[]) {
     char* serverName;
     struct sockaddr_in serverAddr;
 
+    //two file descriptor sets for incoming sockets
+    fd_set newFdList;
+    FD_ZERO(&newFdList);
+    fd_set fdList;
+    FD_ZERO(&fdList);
+    int fdNumLimit;
+
+    struct timeval timeout;
+    tv.tv_sec = 2;
+    tv.tv_usec = 500000;
+
+
     /* parse command line args */
     if (argc != 3) {
 	fprintf(stderr, "usage: http_server1 k|u port\n");
