@@ -86,8 +86,6 @@ int main(int argc, char * argv[])
         struct sockaddr_in incomingAddr;
         incomingSocket = minet_accept(serverSocket, &incomingAddr);
 
-        printf("\nincomingsocket: %i\n",incomingSocket);
-
         if(incomingSocket <= 0) {
             fprintf(stderr, "No socket accepted");
             continue;
@@ -137,9 +135,11 @@ int handle_connection(int clientSocket) {
         }
         buffer[readSize] = '\0';//add a NULL char so it can be read as a string
         headerStr.append(buffer);//append the buffer to the header string
-        if(headerStr.compare(headerStr.size()-4,4,"\r\n\r\n")) break; //break when we read the end of the header
-    }
 
+        //if we have read the header terminating string, break
+        if(headerStr.substr(headerStr.size()-4).compare("\r\n\r\n") == 0)break;
+    }
+    printf("header: %s\n",headerStr.c_str());
 /*--parse request to get file ---------------------------------------------------*/
 /*Assumption: this is a GET request and filename contains no spaces*/
  
