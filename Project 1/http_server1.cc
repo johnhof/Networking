@@ -6,6 +6,7 @@
 #include <string>
 #include <fstream>
 #include <streambuf>
+
 using namespace std;
 
 #define BUFSIZE 1024
@@ -82,9 +83,8 @@ int main(int argc, char * argv[])
 /*--connection handling loop: wait to accept connection-------------------------*/
 
     while (1) {
-        int incomingSocket = -1;
         struct sockaddr_in incomingAddr;
-        incomingSocket = minet_accept(serverSocket, &incomingAddr);
+        int incomingSocket = minet_accept(serverSocket, &incomingAddr);
 
         if(incomingSocket <= 0) {
             fprintf(stderr, "No socket accepted");
@@ -112,6 +112,7 @@ int handle_connection(int clientSocket) {
     int readSize;
     int sizeToSend;
 
+
     char * ok_response_f = "HTTP/1.0 200 OK\r\n"    \
     "Content-type: text/plain\r\n"          \
     "Content-length: %d \r\n\r\n";
@@ -126,7 +127,6 @@ int handle_connection(int clientSocket) {
     while(true)
     {
         readSize = minet_read(clientSocket, buffer, BUFSIZE-1);//read the first chunk of data
-
         if(readSize + headerStr.size() < 4 || readSize == 0)//check header integrity
         {
             if(readSize + headerStr.size()<4)fprintf(stderr, "Header not formatted properly\n"); 
@@ -139,7 +139,7 @@ int handle_connection(int clientSocket) {
         //if we have read the header terminating string, break
         if(headerStr.substr(headerStr.size()-4).compare("\r\n\r\n") == 0)break;
     }
-    printf("header: %s\n",headerStr.c_str());
+
 /*--parse request to get file ---------------------------------------------------*/
 /*Assumption: this is a GET request and filename contains no spaces*/
  
@@ -157,6 +157,7 @@ int handle_connection(int clientSocket) {
         fileStream.seekg(0, std::ios::end);   
         dataFromFile.reserve(fileStream.tellg());
         fileStream.seekg(0, std::ios::beg);
+
 
         //dump the file to a string
         dataFromFile = string((std::istreambuf_iterator<char>(fileStream)),
@@ -194,10 +195,8 @@ int handle_connection(int clientSocket) {
 
         sizeSent = 0;
         //printf("about to send file: %i\n",dataFromFile.size());
-        printf("about to send file\n");
         //while we have data to send
         while(sizeSent<dataFromFile.size()) {
-            printf("first time through\n");
             string dataToSend = dataFromFile.substr(sizeSent);
             //send it
             sizeSent = minet_write(clientSocket, ((char *)(dataToSend.c_str()))+sizeSent, dataToSend.size());
