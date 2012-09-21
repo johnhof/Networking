@@ -88,6 +88,7 @@ int main(int argc, char * argv[])
 
         if(incomingSocket <= 0) {
             fprintf(stderr, "No socket accepted");
+            perror("Could not accept socket connection");
             continue;
         }
         /* handle connections */

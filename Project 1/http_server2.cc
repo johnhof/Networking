@@ -30,21 +30,21 @@ int main(int argc, char * argv[]) {
     int fdNumLimit;
 
     struct timeval timeout;
-    tv.tv_sec = 2;
-    tv.tv_usec = 500000;
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 500000;
 
 
     /* parse command line args */
     if (argc != 3) {
-	fprintf(stderr, "usage: http_server1 k|u port\n");
-	exit(-1);
+    fprintf(stderr, "usage: http_server1 k|u port\n");
+    exit(-1);
     }
 
     serverPort = atoi(argv[2]);
 
     if (serverPort < 1500) {
-	fprintf(stderr, "INVALID PORT NUMBER: %d; can't be < 1500\n", serverPort);
-	exit(-1);
+    fprintf(stderr, "INVALID PORT NUMBER: %d; can't be < 1500\n", serverPort);
+    exit(-1);
     }
 
 /*--initialize and make socket---------------------------------------------------*/
@@ -93,19 +93,19 @@ if (toupper(*(argv[1])) == 'K') minet_init(MINET_KERNEL);
 
     while (1) {
         int clientSocket;
-	
+    
 /*--create read list-------------------------------------------------------------*/
-	
+    
 /*--do a select------------------------------------------------------------------*/
-	
+    
 /*--process sockets that are ready-----------------------------------------------*/
-	
+    
 /*--for the accept socket, add accepted connection to connections----------------*/
-	
+    
 /*--for a connection socket, handle the connection-------------------------------*/
-	
-	   rc = handle_connection(clientSocket);
-	
+    
+       rc = handle_connection(clientSocket);
+    
     }
 }
 
@@ -118,15 +118,15 @@ int handle_connection(int clientSocket) {
     int readSize;
     int sizeToSend;
 
-    char * ok_response_f = "HTTP/1.0 200 OK\r\n"	\
-	"Content-type: text/plain\r\n"			\
-	"Content-length: %d \r\n\r\n";
+    char * ok_response_f = "HTTP/1.0 200 OK\r\n"    \
+    "Content-type: text/plain\r\n"          \
+    "Content-length: %d \r\n\r\n";
     
-    char * notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"	\
-	"Content-type: text/html\r\n\r\n"			\
-	"<html><body bgColor=black text=white>\n"		\
-	"<h2>404 FILE NOT FOUND</h2>\n"				\
-	"</body></html>\n";
+    char * notok_response = "HTTP/1.0 404 FILE NOT FOUND\r\n"   \
+    "Content-type: text/html\r\n\r\n"           \
+    "<html><body bgColor=black text=white>\n"       \
+    "<h2>404 FILE NOT FOUND</h2>\n"             \
+    "</body></html>\n";
         
 /*--first read loop -- get request and headers-----------------------------------*/
     while(true)
