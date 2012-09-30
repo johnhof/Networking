@@ -102,7 +102,8 @@ int main(int argc, char *argv[])
 			}
 	    }
     	if (event.handle==sock) {
-			SockRequestResponse req;
+			
+				{SockRequestResponse req;
 			MinetReceive(sock,req);
 			
 			switch (req.type) {
@@ -192,7 +193,6 @@ int main(int argc, char *argv[])
 				}
 				  break;
 				default:
-				{
 				    SockRequestResponse repl;
 				    // repl.type=SockRequestResponse::STATUS;
 				    repl.type=STATUS;

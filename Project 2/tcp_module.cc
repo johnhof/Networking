@@ -100,6 +100,93 @@ int main(int argc, char * argv[]) {
 
 		    if (event.handle == sock) {
 			// socket request or response has arrived
+			
+				{SockRequestResponse req;
+			MinetReceive(sock,req);
+			
+			switch (req.type) {
+				case CONNECT
+				{
+					SockRequestResponse response;
+
+					response.type=STATUS;
+					response.connection=req.connection;
+					response.bytes=0;
+					response.error=EOK;
+
+//------------------is this where we do the handshake?--------------------------------------
+					
+					MinetSend(sock,response);
+				}
+				case ACCEPT:
+				{ 
+					SockRequestResponse response;
+				    response.bytes=0;
+				    response.error=EOK;
+				    MinetSend(sock,repl);
+				}
+				  break;
+				case STATUS:
+				  // ignored, no response needed
+				  break;
+				  // case SockRequestResponse::WRITE:
+				case WRITE:
+				{
+					//retrieve the data from the request
+					int len = req.data.GetSize();
+					char *buffer = (char *) malloc(len);
+					req.data.GetData(buffer,len,0); 
+					
+					//retrieve the connection
+					ConnectionList<TCPDriver>::iterator cs = clist.FindMatching(req.connection);
+					unsigned bytes = (*cs).state.packetMailer(false,false,false,buffer,len);
+					free(buffer);
+
+					SockRequestResponse response;
+					response.type=STATUS;
+					response.connection=req.connection;
+					response.error=EOK;
+					response.bytes=bytes;
+
+					MinetSend(sock,response);	
+				}
+				  break;
+				  // case SockRequestResponse::FORWARD:
+				case FORWARD:
+				{
+					// We dont need to deal with this
+					SockRequestResponse response;
+					response.type=STATUS;
+					response.error=EOK;
+					MinetSend(sock,response);	
+				}
+				  break;
+				  // case SockRequestResponse::CLOSE:
+				case CLOSE:
+				{
+					//retrieve the connection
+					ConnectionList<TCPDriver>::iterator cs = clist.FindMatching(req.connection);
+					
+					SockRequestResponse response;
+	            	response.connection=req.connection;
+	            	response.type=STATUS;
+	            	if (cs==clist.end()) {
+	              		response.error=ENOMATCH;
+	            	} else {
+	             		response.error=EOK;
+	              		clist.erase(cs);
+	            	}
+	           		MinetSend(sock,response);
+				}
+				  break;
+				default:
+				    SockRequestResponse repl;
+				    // repl.type=SockRequestResponse::STATUS;
+				    repl.type=STATUS;
+				    repl.error=EWHAT;
+				    MinetSend(sock,repl);
+				}
+			}
 		    }
 		}
 
