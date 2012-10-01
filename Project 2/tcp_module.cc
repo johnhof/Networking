@@ -49,7 +49,24 @@ struct TCPState {
     }
 };
 
+//--------------------------------------------------------------------------------------------------
+//----HELPER FUNCITON HEADERS
+//--------------------------------------------------------------------------------------------------
+int handshake();
+void handlePacket(Packet p);
 
+
+//--------------------------------------------------------------------------------------------------
+//----GLOBAL VARIABLES
+//--------------------------------------------------------------------------------------------------
+int connState;
+int targetPort;
+char * targetIP;
+int myPort;
+
+//--------------------------------------------------------------------------------------------------
+//----MAIN
+//--------------------------------------------------------------------------------------------------
 int main(int argc, char * argv[]) {
     MinetHandle mux;
     MinetHandle sock;
@@ -87,6 +104,10 @@ int main(int argc, char * argv[]) {
     MinetSendToMonitor(MinetMonitoringEvent("tcp_module STUB VERSION handling tcp traffic........"));
 
     MinetEvent event;
+
+//-- execute initial handshake ------------------------------------------------------------------------
+    //handShake();
+
     double timeout = 1;
 
     while (MinetGetNextEvent(event, timeout) == 0) {
@@ -95,98 +116,105 @@ int main(int argc, char * argv[]) {
 		    (event.direction == MinetEvent::IN)) {
 		
 		    if (event.handle == mux) {
-			// ip packet has arrived!
+				// ip packet has arrived!
+				Packet p;
+				MinetReceive(mux, p);
+				handlePacket(p);
+				cout << p << endl;
 		    }
 
 		    if (event.handle == sock) {
-			// socket request or response has arrived
-			
-				{SockRequestResponse req;
-			MinetReceive(sock,req);
-			
-			switch (req.type) {
-				case CONNECT
-				{
-					SockRequestResponse response;
+				// socket request or response has arrived
+				
+				SockRequestResponse req;
+				MinetReceive(sock,req);
+				
+				switch (req.type) {
+					case CONNECT
+					{
+						SockRequestResponse response;
 
-					response.type=STATUS;
-					response.connection=req.connection;
-					response.bytes=0;
-					response.error=EOK;
+						response.type=STATUS;
+						response.connection=req.connection;
+						response.bytes=0;
+						response.error=EOK;
+						
+//----------------------handshake?-----------------------------------------------------------
 
-//------------------is this where we do the handshake?--------------------------------------
-					
-					MinetSend(sock,response);
-				}
-				case ACCEPT:
-				{ 
-					SockRequestResponse response;
-				    response.bytes=0;
-				    response.error=EOK;
-				    MinetSend(sock,repl);
-				}
-				  break;
-				case STATUS:
-				  // ignored, no response needed
-				  break;
-				  // case SockRequestResponse::WRITE:
-				case WRITE:
-				{
-					//retrieve the data from the request
-					int len = req.data.GetSize();
-					char *buffer = (char *) malloc(len);
-					req.data.GetData(buffer,len,0); 
-					
-					//retrieve the connection
-					ConnectionList<TCPDriver>::iterator cs = clist.FindMatching(req.connection);
-					unsigned bytes = (*cs).state.packetMailer(false,false,false,buffer,len);
-					free(buffer);
+						MinetSend(sock,response);
+					}
+					break;
+					case ACCEPT:
+					{ 
+						SockRequestResponse response;
+						reply.type=STATUS;
+					    response.error=EOK;
+					    MinetSend(sock,repl);
+					}
+					  break;
+					case STATUS:// ignored, no response needed
+					  break;
+					  // case SockRequestResponse::WRITE:
+					case WRITE:
+					{
+						/*/*THIS IS FROM UPD, MAJOR ADDITIONS NEEDED
+						//retrieve the data from the request
+						int len = req.data.GetSize();
+						char *buffer = (char *) malloc(len);
+						req.data.GetData(buffer,len,0); 
+						
+						//retrieve the connection
 
-					SockRequestResponse response;
-					response.type=STATUS;
-					response.connection=req.connection;
-					response.error=EOK;
-					response.bytes=bytes;
+						SockRequestResponse response;
+						response.type=STATUS;
+						response.connection=req.connection;
+						response.error=EOK;
+						response.bytes=bytes;
 
-					MinetSend(sock,response);	
+						MinetSend(sock,response);	
+						*/
+					}
+					  break;
+					  // case SockRequestResponse::FORWARD:
+					case FORWARD:
+					{
+						// We dont need to deal with this
+						SockRequestResponse response;
+						response.type=STATUS;
+						response.error=EOK;
+						MinetSend(sock,response);	
+					}
+					  break;
+					  // case SockRequestResponse::CLOSE:
+					case CLOSE:
+					{
+						/*THIS IS FROM UPD, MAJOR ADDITIONS NEEDED
+
+						//retrieve the connection
+						ConnectionList<TCPDriver>::iterator cs = clist.FindMatching(req.connection);
+						
+						SockRequestResponse response;
+		            	response.connection=req.connection;
+		            	response.type=STATUS;
+		            	if (cs==clist.end()) {
+		              		response.error=ENOMATCH;
+		            	} else {
+		             		response.error=EOK;
+		              		clist.erase(cs);
+		            	}
+		           		MinetSend(sock,response);
+		           		*/
+
+					}
+					  break;
+					default:
+					    SockRequestResponse repl;
+					    // repl.type=SockRequestResponse::STATUS;
+					    repl.type=STATUS;
+					    repl.error=EWHAT;
+					    MinetSend(sock,repl);
+					}
 				}
-				  break;
-				  // case SockRequestResponse::FORWARD:
-				case FORWARD:
-				{
-					// We dont need to deal with this
-					SockRequestResponse response;
-					response.type=STATUS;
-					response.error=EOK;
-					MinetSend(sock,response);	
-				}
-				  break;
-				  // case SockRequestResponse::CLOSE:
-				case CLOSE:
-				{
-					//retrieve the connection
-					ConnectionList<TCPDriver>::iterator cs = clist.FindMatching(req.connection);
-					
-					SockRequestResponse response;
-	            	response.connection=req.connection;
-	            	response.type=STATUS;
-	            	if (cs==clist.end()) {
-	              		response.error=ENOMATCH;
-	            	} else {
-	             		response.error=EOK;
-	              		clist.erase(cs);
-	            	}
-	           		MinetSend(sock,response);
-				}
-				  break;
-				default:
-				    SockRequestResponse repl;
-				    // repl.type=SockRequestResponse::STATUS;
-				    repl.type=STATUS;
-				    repl.error=EWHAT;
-				    MinetSend(sock,repl);
-				}
-			}
 		    }
 		}
 
@@ -199,4 +227,59 @@ int main(int argc, char * argv[]) {
     MinetDeinit();
 
     return 0;
+}
+
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+//----HELPER FUNCTIONS
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------
+
+
+//--------------------------------------------------------------------------------------------------
+//----handShake()
+//		performs three part handshake to establish a connection
+//--------------------------------------------------------------------------------------------------
+
+int handShake()
+{
+}
+
+
+//--------------------------------------------------------------------------------------------------
+//----receive()
+//		takes a packet and performs the appropriate operation based on the state
+//			-Packet p: incoming packet
+//--------------------------------------------------------------------------------------------------
+
+void handlePacket(Packet p){
+	switch(conState){
+		case LISTEN:
+			//Should never reach this state.
+			break;
+		case SYN_RCVD:
+			//handshake part1
+			break;
+		case SYN_SENT:
+			//finish handshale
+			break;
+		case ESTABLISHED:
+			//operate normally
+			break;
+		case FIN_WAIT1:
+			//recieve ACK, go to FIN_WAIT2
+			break;
+		case FIN_WAIT2:
+			//recieve FIN, send ACK, go to TIME_WAIT
+			break;
+		case TIME_WAIT:
+			//Wait?
+			break;
+		case CLOSE_WAIT:
+			//Send FIN and ACK after receiving FIN
+			break;
+		case LAST_ACK:
+			//terminate connection
+			break;
+	}
 }
