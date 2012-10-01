@@ -113,9 +113,11 @@ int main(int argc, char * argv[]) {
     while (MinetGetNextEvent(event, timeout) == 0) {
 
 		if ((event.eventtype == MinetEvent::Dataflow) && 
-		    (event.direction == MinetEvent::IN)) {
+		    (event.direction == MinetEvent::IN)) 
+		{
 		
-		    if (event.handle == mux) {
+		    if (event.handle == mux) 
+		    {
 				// ip packet has arrived!
 				Packet p;
 				MinetReceive(mux, p);
@@ -123,14 +125,16 @@ int main(int argc, char * argv[]) {
 				cout << p << endl;
 		    }
 
-		    if (event.handle == sock) {
+		    if (event.handle == sock) 
+		    {
 				// socket request or response has arrived
 				
 				SockRequestResponse req;
 				MinetReceive(sock,req);
 				
-				switch (req.type) {
-					case CONNECT
+				switch (req.type) 
+				{
+					case CONNECT:
 					{
 						SockRequestResponse response;
 
@@ -147,9 +151,9 @@ int main(int argc, char * argv[]) {
 					case ACCEPT:
 					{ 
 						SockRequestResponse response;
-						reply.type=STATUS;
+						response.type=STATUS;
 					    response.error=EOK;
-					    MinetSend(sock,repl);
+					    MinetSend(sock,response);
 					}
 					  break;
 					case STATUS:// ignored, no response needed
@@ -208,6 +212,7 @@ int main(int argc, char * argv[]) {
 					}
 					  break;
 					default:
+					{
 					    SockRequestResponse repl;
 					    // repl.type=SockRequestResponse::STATUS;
 					    repl.type=STATUS;
@@ -224,7 +229,7 @@ int main(int argc, char * argv[]) {
 
     }
 
-    MinetDeinit();
+    //MinetDeinit();
 
     return 0;
 }
@@ -243,6 +248,7 @@ int main(int argc, char * argv[]) {
 
 int handShake()
 {
+	return 0;
 }
 
 
@@ -253,7 +259,7 @@ int handShake()
 //--------------------------------------------------------------------------------------------------
 
 void handlePacket(Packet p){
-	switch(conState){
+	switch(connState){
 		case LISTEN:
 			//Should never reach this state.
 			break;
