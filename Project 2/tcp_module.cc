@@ -9,7 +9,6 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
-
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -127,8 +126,8 @@ int main(int argc, char * argv[]) {
     MinetEvent event;
 
 //-- execute initial handshake ------------------------------------------------------------------------
-    
-    handShake();
+    Packet emptyPacket;
+    handShake(emptyPacket);
 
     double timeout = 1;
 
@@ -151,7 +150,7 @@ int main(int argc, char * argv[]) {
 						break;
 					case SYN_RCVD:
 					case SYN_SENT:
-						handshake(P)
+						handShake(p);
 						break;
 					case ESTABLISHED:
 						//operate normally
@@ -320,10 +319,10 @@ void handShake(Packet inPacket)
 			}
 
 			//retrieve the seqnum and the port
+			TCPHeader outHeader;
 			inHeader.GetSeqNum(ackNum);
 			outHeader.SetAckNum(ackNum++, outPacket);//dont forget to increment the ACK!
 			outPacket.PushFrontHeader(ipHead);
-			TCPHeader outHeader;
 			inHeader.GetSourcePort(destPort);
 			outHeader.SetDestPort(destPort, outPacket);
 
@@ -335,9 +334,10 @@ void handShake(Packet inPacket)
 			outHeader.SetSeqNum(50, outPacket);
 
 //!!!! NOTE (OC) this is set to zero
-			SET_ACK(0);
-			SET_SYN(0);
-			outHeader.SetFlags(0, outPacket);
+			unsigned char zero = 0;
+			SET_ACK(zero);
+			SET_SYN(zero);
+			outHeader.SetFlags(zero, outPacket);
 //!!!! NOTE: The window size is hardcoded to 100, should it be dynamic?
 			outHeader.SetWinSize(100, outPacket);
 			outPacket.PushBackHeader(outHeader);
@@ -370,8 +370,10 @@ void handShake(Packet inPacket)
 			outHeader.SetSourcePort(myPort, outPacket);
 			outHeader.SetDestPort(targetPort, outPacket);
 			outHeader.SetHeaderLen(TCP_HEADER_BASE_LENGTH,outPacket);
-			SET_ACK(0);
-			outHeader.SetFlags(0, outPacket);
+
+			unsigned char zero = 0;
+			SET_ACK(zero);
+			outHeader.SetFlags(zero, outPacket);
 			outHeader.SetWinSize(TCP_MAXIMUM_SEGMENT_SIZE,outPacket);
 			//dont forget to increment the seq and ack!
 			outHeader.SetAckNum(ackNum++,outPacket);
@@ -383,6 +385,7 @@ void handShake(Packet inPacket)
 			connState = ESTABLISHED;
 
 //!!!! NOTE: not sure on this
+			char l[] = "abcgdf";
 			packetMailer(false,false,false,l,sizeof(l));
 		}
 			break;
