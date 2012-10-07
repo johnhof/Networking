@@ -65,6 +65,7 @@ char * targetIP;
 int myPort;
 unsigned int seqNum;
 unsigned int ackNum;
+MinetHandle mux;
 
 //--------------------------------------------------------------------------------------------------
 //----MAIN
@@ -87,8 +88,8 @@ int main(int argc, char * argv[]) {
 	ipHead.SetDestIP(IPAddress(targetIP));
 	ipHead.SetTotalLength(TCP_HEADER_BASE_LENGTH+IP_HEADER_BASE_LENGTH);
 
+    mux=MinetIsModuleInConfig(MINET_IP_MUX) ? MinetConnect(MINET_IP_MUX) : MINET_NOHANDLE;
 
-    MinetHandle mux;
     MinetHandle sock;
     
     ConnectionList<TCPState> clist;
@@ -152,6 +153,7 @@ int main(int argc, char * argv[]) {
 					case SYN_SENT:
 						handShake(p);
 						break;
+						
 					case ESTABLISHED:
 						//operate normally
 						break;
@@ -383,10 +385,6 @@ void handShake(Packet inPacket)
 			outPacket.PushBackHeader(outHeader);
 			MinetSend(mux, outPacket);
 			connState = ESTABLISHED;
-
-//!!!! NOTE: not sure on this
-			char l[] = "abcgdf";
-			packetMailer(false,false,false,l,sizeof(l));
 		}
 			break;
 		//if we are not in the SYN_RCVD or SYN_SENT states, 
