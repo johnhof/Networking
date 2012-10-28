@@ -40,10 +40,10 @@ struct TCPState {
 
 void handlePacket(MinetHandle mux, Packet p);
 
-bool retrieveTCPHeaderData(Packet p, unsigned short src_port, unsigned short dest_port, unsigned int seq, unsigned int ack, unsigned char flags_recv);
+bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv);
 TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigned int seq, unsigned short src_port, unsigned short dest_port, unsigned char flags);
 
-void retrieveIPHeaderData(Packet p, IPAddress destIP, IPAddress srcIP, unsigned char protocol);
+IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol);
 IPHeader setupIPHeader(IPAddress dest_IP);
 
 
@@ -84,22 +84,22 @@ void client_connect(MinetHandle mux){
 
 
 int main(int argc, char * argv[]) {
-    MinetHandle mux;
-    MinetHandle sock;
+  MinetHandle mux;
+  MinetHandle sock;
     
-    ConnectionList<TCPState> clist;
+  ConnectionList<TCPState> clist;
 
-    MinetInit(MINET_TCP_MODULE);
+  MinetInit(MINET_TCP_MODULE);
 
-    mux = MinetIsModuleInConfig(MINET_IP_MUX) ?  
+  mux = MinetIsModuleInConfig(MINET_IP_MUX) ?  
   MinetConnect(MINET_IP_MUX) : 
   MINET_NOHANDLE;
     
-    sock = MinetIsModuleInConfig(MINET_SOCK_MODULE) ? 
+  sock = MinetIsModuleInConfig(MINET_SOCK_MODULE) ? 
   MinetAccept(MINET_SOCK_MODULE) : 
   MINET_NOHANDLE;
 
-    if ( (mux == MINET_NOHANDLE) && 
+  if ( (mux == MINET_NOHANDLE) && 
    (MinetIsModuleInConfig(MINET_IP_MUX)) ) {
 
   MinetSendToMonitor(MinetMonitoringEvent("Can't connect to ip_mux"));
@@ -174,15 +174,24 @@ void handlePacket(MinetHandle mux, Packet p){
   unsigned char flags_recv = 0;  
   unsigned char protocol;
   IPAddress dest_IP;
-  IPAddress src_IP;
+  IPAddress src_IP = MyIPAddr();
   IPHeader iph_out;
   TCPHeader tcp_out;
 
-  retrieveTCPHeaderData(p, dest_port, src_port, seq, ack, flags_recv);
-  retrieveIPHeaderData(p, src_IP, dest_IP, protocol);
+  printf("\n\n\n");
 
-  setupTCPHeader(p_out, win, ack, seq, src_port, dest_port, flags);
-  setupIPHeader(dest_IP); 
+  checksum = retrieveTCPHeaderData(p, &dest_port, &src_port, &seq, &ack, &flags_recv);
+  dest_IP = retrieveIPHeaderData(p, &protocol);
+
+  tcp_out = setupTCPHeader(p_out, win, ack+1, seq, src_port, dest_port, flags);
+  iph_out = setupIPHeader(dest_IP); 
+
+          printf("in handle (2): \n");
+          printf("win: %u \n",win);
+          printf("ack: %u \n",ack);
+          printf("seq: %u \n",seq);
+          printf("src_port: %u \n",src_port);
+          printf("dest_port: %u \n\n",dest_port);
 
   p_out.PushFrontHeader(iph_out); 
 
@@ -199,25 +208,28 @@ void handlePacket(MinetHandle mux, Packet p){
     printf("We got a SYN packet!!\n");
     SET_SYN(flags);
     SET_ACK(flags);
+    
+            tcp_out.SetFlags(flags,p_out);
                       
     valid = true;
   }  
 //NOTE: COMMENT ME OUT TO TEST CODE CHANGES
-  else if(IS_PSH(flags_recv)){
+  /*else if(IS_PSH(flags_recv)){
     //we got a data packet we need to ack
     printf("We got a data packet \n");
     SET_ACK(flags);
 
     valid = true;
-    } 
+    } */
 //FINISH COMMENT BLOCK HERE  
     else{
       printf("No flags could be met\n");  
+      valid = false;
     }
 
     p_out.PushBackHeader(tcp_out);               
               
-    if(valid == true)MinetSend(mux,p_out); 
+    if(valid == true) MinetSend(mux,p_out); 
 }
 
 
@@ -226,20 +238,19 @@ void handlePacket(MinetHandle mux, Packet p){
 //-----(recieved packet, source port, destination port, sequence number, ack number, flags)
 //---------------------------------------------------------------------------------
 
-bool retrieveTCPHeaderData(Packet p, unsigned short src_port, unsigned short dest_port, unsigned int seq, unsigned int ack, unsigned char flags_recv){
+bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv){
   //20 bytes is size of other TCP Headers
   TCPHeader tcph = p.FindHeader(Headers::TCPHeader);   // retrieve the udp header from the packet
   bool checksum = tcph.IsCorrectChecksum(p);    // verify the checksum is correct
 
-  tcph.GetAckNum(seq);
-  tcph.GetSeqNum(ack);
-  ack = ack + 1; //ack number + 1? Maybe should be ack + amt of data received
-              
+  tcph.GetAckNum(*seq);
+  tcph.GetSeqNum(*ack);
+
   printf("About to read information in from Connection c \n");  
             
-  tcph.GetDestPort(src_port);
-  tcph.GetSourcePort(dest_port);
-  tcph.GetFlags(flags_recv);  
+  tcph.GetDestPort(*src_port);
+  tcph.GetSourcePort(*dest_port);
+  tcph.GetFlags(*flags_recv);  
   printf("We just pulled information from Connection c \n");  
 
   return checksum;
@@ -266,15 +277,18 @@ TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigne
 
 //---------------------------------------------------------------------------------
 //-- retrieveIPHeaderData
-//-----(recieved packet, destination IP, source IP, protocol used)
+//-----(recieved packet, protocol used)
+//-----RETURN: source IP of the packet (terrible workaround... fix if time)
 //---------------------------------------------------------------------------------
 
-void retrieveIPHeaderData(Packet p, IPAddress destIP, IPAddress srcIP, unsigned char protocol){
+IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol){
   IPHeader iph = p.FindHeader(Headers::IPHeader);     // retrieve the ip header from the packet
-              
+  IPAddress srcIP;
+
   iph.GetSourceIP(srcIP);
-  iph.GetDestIP(destIP);
-  iph.GetProtocol(protocol);
+  iph.GetProtocol(*protocol);
+
+  return srcIP;
 }
 //---------------------------------------------------------------------------------
 //-- setupIPHeader
