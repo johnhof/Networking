@@ -19,38 +19,22 @@
 #include <errno.h>
 #include "tcpstate.h"
 
-
 #include <iostream>
 
 #include "Minet.h"
 
 using namespace std;
-/*
-//NOT SURE WHAT EXACTLY SHOULD GO ON HERE. USE ENUMERATORS FOR NOW
-struct TCPState {
-    // need to write this
-    std::ostream & Print(std::ostream &os) const { 
-  os << "TCPState()" ; 
-  return os;
-    }
-};*/
-#define CLOSED = 0
-#define SYN_SENT = 1
-#define LISTEN = 2
-#define SYN_RCVD = 3
-#define ESTABLSHED = 4
-
 
 //---------------------------------------------------------------------------------
 //-- function headers & globals
 //---------------------------------------------------------------------------------
 
-void handlePacket(MinetHandle mux, Packet p);
+void handlePacket(MinetHandle mux, Packet p, unsigned char headerSize);
 
-bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv, unsigned char *header_size);
+bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv);
 TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigned int seq, unsigned short src_port, unsigned short dest_port, unsigned char flags);
 
-IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, int *data_size);
+IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, unsigned short *total_size);
 IPHeader setupIPHeader(IPAddress dest_IP);
 
 //for now, default as a server
@@ -149,7 +133,7 @@ int main(int argc, char * argv[]) {
             headerSize = TCPHeader::EstimateTCPHeaderLength(p);  
             p.ExtractHeaderFromPayload<TCPHeader>(40);  // Parse the headers in the packet
   
-            handlePacket(mux, p);
+            handlePacket(mux, p,headerSize);
           }
 
           if (event.handle == sock) {
@@ -171,33 +155,36 @@ int main(int argc, char * argv[]) {
 
 //---------------------------------------------------------------------------------
 //-- handlePacket
-//-----(mux, flags, sequence number, data length, destination IP, destination port)
+//-----(mux, incoming packet, header size)
 //---------------------------------------------------------------------------------
 
-void handlePacket(MinetHandle mux, Packet p){
+void handlePacket(MinetHandle mux, Packet p, unsigned char header_size){
 
   Packet p_out;
   int data_size = 0;
   unsigned short dest_port, src_port;
   unsigned short win = 1000; 
+  unsigned short total_size = 0;
   bool checksum;
-  bool valid = false;
   unsigned int seq = 0;
   unsigned int ack = 0;
   unsigned char flags = 0;
   unsigned char flags_recv = 0;  
   unsigned char protocol;
-  unsigned char header_size = 0;
   IPAddress dest_IP;
   IPAddress src_IP = MyIPAddr();
   IPHeader iph_out;
   TCPHeader tcp_out;
 
+  printf("about to enter retrieve tcp header\n");
   //data_size is temporarily storing the tcp header size, then passed into retrieveIPheader to get data size
-  checksum = retrieveTCPHeaderData(p, &dest_port, &src_port, &seq, &ack, &flags_recv, &data_size);
-  printf("header size handler: %i \n",data_size);
-  dest_IP = retrieveIPHeaderData(p, &protocol, &data_size);
-  printf("total size handler: %i \n",data_size);
+  checksum = retrieveTCPHeaderData(p, &dest_port, &src_port, &seq, &ack, &flags_recv);
+  printf("header size handler: %i \n",total_size);
+  dest_IP = retrieveIPHeaderData(p, &protocol, &total_size);
+  printf("total size handler: %u \n",total_size);
+
+  data_size = (int)total_size - 20 - header_size;
+  printf("data size: %i \n",data_size);
 
 
   tcp_out = setupTCPHeader(p_out, win, ack+1, seq, src_port, dest_port, flags);
@@ -205,6 +192,7 @@ void handlePacket(MinetHandle mux, Packet p){
 
   p_out.PushFrontHeader(iph_out); 
 
+  printf("got to the switch\n");
   switch(state)
   {
 
@@ -229,7 +217,7 @@ void handlePacket(MinetHandle mux, Packet p){
 
     case LISTEN://looking for a SYN (server side only)
     {
-      else if(IS_SYN(flags_recv)){ //respond with SYN/ACK
+      if(IS_SYN(flags_recv)){ //respond with SYN/ACK
 
         printf("We got a SYN packet!!\n");
         SET_SYN(flags);
@@ -250,7 +238,7 @@ void handlePacket(MinetHandle mux, Packet p){
         state = ESTABLISHED;
 
         //if we recieved data, respond
-        if(data_length>0){
+        if(data_size>0){
           printf("data recieved, responding");
 
           p_out.PushBackHeader(tcp_out);  
@@ -264,7 +252,7 @@ void handlePacket(MinetHandle mux, Packet p){
     
     case ESTABLISHED://looking for packets with data
     {
-        if(data_length>0){
+        if(data_size>0){
           printf("data recieved, responding");
 
           p_out.PushBackHeader(tcp_out);  
@@ -277,14 +265,10 @@ void handlePacket(MinetHandle mux, Packet p){
 
 //---------------------------------------------------------------------------------
 //-- retrieveTCPHeaderData
-//-----(recieved packet, source port, destination port, sequence number, ack number, flags)
+//-----(recieved packet, source port, destination port, sequence number, ack number, flags, header size)
 //---------------------------------------------------------------------------------
 
-bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv, int *header_size){
-  *header_size = (int)TCPHeader::EstimateTCPHeaderLength(p);
-
-  printf("header size: %i", header_size);
-  
+bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv){
   TCPHeader tcph = p.FindHeader(Headers::TCPHeader);   // retrieve the udp header from the packet
   bool checksum = tcph.IsCorrectChecksum(p);    // verify the checksum is correct
 
@@ -318,21 +302,17 @@ TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigne
 
 //---------------------------------------------------------------------------------
 //-- retrieveIPHeaderData
-//-----(recieved packet, protocol used, size of the tcp header: returned as data size)
+//-----(recieved packet, protocol used, size of the tcp header)
 //-----RETURN: source IP of the packet (terrible workaround... fix if time)
 //---------------------------------------------------------------------------------
 
-IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, int *headersize_to_datasize){
+IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, unsigned short *total_size){
   IPHeader iph = p.FindHeader(Headers::IPHeader);     // retrieve the ip header from the packet
   IPAddress srcIP;
-  unsigned char total_size = 0;
 
   iph.GetSourceIP(srcIP);
   iph.GetProtocol(*protocol);
-  iph.GetTotalLength(total_size);  
-  printf("total size: %i \n",(int)tot_len);
-  *headersize_to_datasize = (int)total_size - 20 - *headersize_to_datasize;
-  printf("total size: %i \n",*headersize_to_datasize);
+  iph.GetTotalLength(*total_size);  
 
   return srcIP;
 }
