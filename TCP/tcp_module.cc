@@ -23,78 +23,240 @@
 
 #include "Minet.h"
 
+
 using namespace std;
 
-//---------------------------------------------------------------------------------
-//-- function headers & globals
-//---------------------------------------------------------------------------------
-
-void handlePacket(MinetHandle mux, Packet p, unsigned char headerSize);
-
-bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv);
-TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigned int seq, unsigned short src_port, unsigned short dest_port, unsigned char flags);
-
-IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, unsigned short *total_size);
-IPHeader setupIPHeader(IPAddress dest_IP);
-
-//for now, default as a server
-int state = LISTEN;
 
 
-//---------------------------------------------------------------------------------
-//-- client_connect
-//-----(MinetHandle mux)
-//---------------------------------------------------------------------------------
-
-void client_connect(MinetHandle mux){ 
-  
-//  Packet p("Hello",strlen("Hello"));
-  Packet p;
-  unsigned char flags = 0;
-  unsigned int seq = 47;
-  unsigned int ack = 0;
-  unsigned short win_size = 1000;
-  unsigned short src_port = 6071;
-  unsigned short dest_port = 6000;
-
-  
-  IPHeader ip_hdr = setupIPHeader("192.168.42.9");
-  p.PushFrontHeader(ip_hdr);
-  
-  TCPHeader tcp_hdr = setupTCPHeader(p, win_size, ack, seq, src_port, dest_port, flags);
-  SET_SYN(flags);  
-  p.PushBackHeader(tcp_hdr);
-
-  MinetSend(mux,p);
-//  printf("Packet Sent\n");
-  sleep(2);
-  MinetSend(mux,p);
-  state = SYN_SENT;
+void sock_status_reply(int error, MinetHandle sock, SockRequestResponse req){
+   SockRequestResponse repl; 
+   repl.type = STATUS;         
+    repl.connection = req.connection; 
+    repl.error = error;              
+    repl.bytes = 0;
+    MinetSend(sock,repl);
 
 }
 
-//---------------------------------------------------------------------------------
-//-- main
-//---------------------------------------------------------------------------------
+
+void received_packet( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsigned char flags_recv, unsigned int ack, unsigned int seq, int data_length, IPAddress dest, unsigned short destport,Buffer x,MinetHandle sock, Connection conn, unsigned short sendwin){
+
+    switch((*cs).state.GetState()){   
+    case SYN_SENT: {
+      if(IS_SYN(flags_recv) && IS_ACK(flags_recv)){  
+        printf("Got a SYN_ACK\n");
+        Packet r;
+        IPHeader ip_hdr;
+        ip_hdr.SetProtocol(IP_PROTO_TCP);       
+        ip_hdr.SetSourceIP((*cs).connection.src); 
+        ip_hdr.SetDestIP((*cs).connection.dest);
+        ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
+        (*cs).state.SetLastSent(ack);
+        r.PushFrontHeader(ip_hdr);
+
+        TCPHeader tcp_hdr;
+        tcp_hdr.SetSourcePort((*cs).connection.srcport,r);
+        tcp_hdr.SetDestPort((*cs).connection.destport,r);
+        unsigned char flags = 0; SET_ACK(flags);
+        tcp_hdr.SetFlags(flags,r);  
+        tcp_hdr.SetSeqNum(ack,r);   
+        tcp_hdr.SetAckNum(seq +1,r);    
+        tcp_hdr.SetWinSize(1024,r);
+        tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+        r.PushBackHeader(tcp_hdr);
+        printf("Built the packet\n");
+        MinetSend(mux,r);
+        (*cs).state.SetState(ESTABLISHED);
+        (*cs).state.SetSendRwnd(sendwin);
+        (*cs).state.last_acked = seq +1;
+
+        SockRequestResponse write(WRITE,(*cs).connection,x,data_length, EOK);
+        MinetSend(sock,write);  
+        } 
+      break;
+    }
+    case FIN_WAIT1:{ 
+      break;
+    }
+    case FIN_WAIT2:{ 
+      break;
+    }
+    case LISTEN:{
+      if(IS_SYN(flags_recv)){ 
+        printf("Got a SYN\n");
+        Packet r;
+        IPHeader ip_hdr;
+        ip_hdr.SetProtocol(IP_PROTO_TCP);       
+        ip_hdr.SetSourceIP((*cs).connection.src); 
+        cout << (*cs).connection.src;
+        ip_hdr.SetDestIP(dest);
+        cout << dest;
+        ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
+        (*cs).state.SetLastSent(ack);
+        r.PushFrontHeader(ip_hdr);
+        TCPHeader tcp_hdr;
+        tcp_hdr.SetSourcePort((*cs).connection.srcport,r);
+        tcp_hdr.SetDestPort(destport,r);
+        unsigned char flags = 0; SET_ACK(flags); SET_SYN(flags);
+        tcp_hdr.SetFlags(flags,r);  
+        tcp_hdr.SetSeqNum(ack,r);   
+        tcp_hdr.SetAckNum(seq +1,r);    
+        tcp_hdr.SetWinSize(1024,r);
+        tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+        r.PushBackHeader(tcp_hdr);
+        MinetSend(mux,r);
+        sleep(2);
+        MinetSend(mux,r);
+        cout << "Sent the packet !! \n";
+        (*cs).state.SetState(SYN_RCVD);
+        (*cs).state.SetLastAcked(seq + 1);
+        (*cs).state.SetLastSent(ack);
+        } 
+      break;
+    }
+
+    case SYN_RCVD: {//We've got a ack
+      if(IS_ACK(flags_recv)){ //we have an ack packet so we are established
+        printf("Got a ACK\n");
+        (*cs).state.SetState(ESTABLISHED);
+        (*cs).state.SetLastSent(ack);
+        (*cs).state.SetLastAcked(seq + 1);
+        (*cs).state.SetSendRwnd(sendwin);
+        } 
+      break;
+    }
+
+    case CLOSING:{
+      if(IS_ACK(flags_recv)){
+        (*cs).state.SetState(CLOSED);
+      }
+      break;
+    }
+    case CLOSE_WAIT:{
+      break;
+    }
+    case LAST_ACK: {
+      break;
+    } 
+
+    case ESTABLISHED:{
+      if(IS_FIN(flags_recv)){
+        Packet r;
+        IPHeader ip_hdr;
+        ip_hdr.SetProtocol(IP_PROTO_TCP);       
+        ip_hdr.SetSourceIP((*cs).connection.src); 
+        ip_hdr.SetDestIP(dest);
+        ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
+        (*cs).state.SetState(LAST_ACK); 
+        r.PushFrontHeader(ip_hdr);
+        TCPHeader tcp_hdr;
+        tcp_hdr.SetSourcePort((*cs).connection.srcport,r);
+        tcp_hdr.SetDestPort(destport,r);
+        unsigned char flags = 0; SET_ACK(flags); SET_FIN(flags);
+        tcp_hdr.SetFlags(flags,r);  
+        tcp_hdr.SetSeqNum(ack,r);   
+        tcp_hdr.SetAckNum(seq+1,r);   
+        tcp_hdr.SetWinSize(1024,r);
+        tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+        r.PushBackHeader(tcp_hdr);
+        MinetSend(mux,r);
+        (*cs).state.SetLastSent(ack);
+        (*cs).state.SetLastAcked(seq + 1);
+        (*cs).state.SetLastRecvd(seq + data_length);
+        break;
+      }
+      if(data_length > 0){
+        SockRequestResponse write(WRITE,(*cs).connection,x,data_length, EOK);
+        MinetSend(sock,write);  
+
+        Packet r(x);
+
+        //Packet r;
+        IPHeader ip_hdr;
+
+        ip_hdr.SetProtocol(IP_PROTO_TCP);       
+        ip_hdr.SetSourceIP((*cs).connection.src); 
+        ip_hdr.SetDestIP(dest);
+
+        ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH + data_length); 
+        //ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTHf); 
+        (*cs).state.SetLastAcked(ack+data_length);
+        
+        ip_hdr.SetChecksum(0);
+        ip_hdr.RecomputeChecksum();
+        
+        r.PushFrontHeader(ip_hdr);
+
+        (*cs).state.SetSendRwnd(sendwin);       
+
+        TCPHeader tcp_hdr;
+        tcp_hdr.SetSourcePort((*cs).connection.srcport,r);
+        tcp_hdr.SetDestPort(destport,r);
+        unsigned char flags = 0; SET_ACK(flags);
+        tcp_hdr.SetFlags(flags,r);  
+        tcp_hdr.SetSeqNum(ack,r);   
+        tcp_hdr.SetAckNum(seq+data_length,r);   
+        tcp_hdr.SetWinSize(1024,r);
+        tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+
+        tcp_hdr.SetChecksum(0);
+        tcp_hdr.RecomputeChecksum(r);
+        
+        r.PushBackHeader(tcp_hdr);
+        MinetSend(mux,r);
+        break;
+      }
+    }
+    default:{break;}
+
+  }
+
+}
+
+void client_connect_packet(Packet r, SockRequestResponse c, MinetHandle mux, unsigned char flags ,ConnectionList<TCPState>::iterator cs){ 
+  
+  
+  unsigned int seq = 47;    //should be random
+  unsigned int ack = 0;   //should also be random
+  unsigned short win_size = 500;  
+  
+  IPHeader ip_hdr;
+  ip_hdr.SetProtocol(IP_PROTO_TCP);
+  ip_hdr.SetSourceIP(c.connection.src); 
+  ip_hdr.SetDestIP(c.connection.dest);
+  ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
+  (*cs).state.SetLastSent(seq);
+  r.PushFrontHeader(ip_hdr);
+
+  TCPHeader tcp_hdr;
+  tcp_hdr.SetSourcePort(c.connection.srcport,r);
+  tcp_hdr.SetDestPort(c.connection.destport,r);
+  tcp_hdr.SetFlags(flags,r);  
+  tcp_hdr.SetSeqNum(seq,r);
+  tcp_hdr.SetAckNum(ack,r);   
+  tcp_hdr.SetWinSize(win_size,r);
+  tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+  r.PushBackHeader(tcp_hdr);
+  MinetSend(mux,r);
+
+}
 
 
 int main(int argc, char * argv[]) {
-  MinetHandle mux;
-  MinetHandle sock;
+    MinetHandle mux;
+    MinetHandle sock;
     
-  ConnectionList<TCPState> clist;
+    ConnectionList<TCPState> clist;
 
-  MinetInit(MINET_TCP_MODULE);
+    MinetInit(MINET_TCP_MODULE);
 
-  mux = MinetIsModuleInConfig(MINET_IP_MUX) ?  
-  MinetConnect(MINET_IP_MUX) : 
-  MINET_NOHANDLE;
+    mux = MinetIsModuleInConfig(MINET_IP_MUX) ? MinetConnect(MINET_IP_MUX) : MINET_NOHANDLE;
     
-  sock = MinetIsModuleInConfig(MINET_SOCK_MODULE) ? 
+    sock = MinetIsModuleInConfig(MINET_SOCK_MODULE) ? 
   MinetAccept(MINET_SOCK_MODULE) : 
   MINET_NOHANDLE;
 
-  if ( (mux == MINET_NOHANDLE) && 
+    if ( (mux == MINET_NOHANDLE) && 
    (MinetIsModuleInConfig(MINET_IP_MUX)) ) {
 
   MinetSendToMonitor(MinetMonitoringEvent("Can't connect to ip_mux"));
@@ -117,33 +279,308 @@ int main(int argc, char * argv[]) {
     MinetEvent event;
     double timeout = 1;
 
-// client_connect(mux);
+  
 
     while (MinetGetNextEvent(event, timeout) == 0) {
 
-      if ((event.eventtype == MinetEvent::Dataflow) && 
-          (event.direction == MinetEvent::IN)) {
-        unsigned char headerSize = 0;
-      
-          if (event.handle == mux) {
-            //handle packet
-            Packet p;
-
-            MinetReceive(mux, p);                      // Get the packet from Minet
-            headerSize = TCPHeader::EstimateTCPHeaderLength(p);  
-            p.ExtractHeaderFromPayload<TCPHeader>(40);  // Parse the headers in the packet
+  if ((event.eventtype == MinetEvent::Dataflow) && (event.direction == MinetEvent::IN)) {
   
-            handlePacket(mux, p,headerSize);
-          }
+      if (event.handle == mux) {
+    Packet p;
+                Packet packet_to_send;
+    unsigned char head_len=0;
+    unsigned short tot_len = 0;
+                bool checksumok;
+    unsigned int seq = 0;
+    unsigned int ack = 0;
+    unsigned char flags = 0;
+    IPAddress destination_ip;
+    unsigned short dest_port;
+    unsigned short source_port;
+    unsigned short win_size = 1000;
+    unsigned char flags_recv = 0;   
+    bool valid = false;
+    IPHeader iph_send_back;
+                TCPHeader tcp_send_back;
+    size_t packet_size; 
+    int data_length = 0;
+    unsigned short send_win = 0;
+    
+   
+                MinetReceive(mux, p);                      
+    head_len = TCPHeader::EstimateTCPHeaderLength(p);   
+    p.ExtractHeaderFromPayload<TCPHeader>(head_len);  
+                TCPHeader tcph;
+                tcph = p.FindHeader(Headers::TCPHeader);   
+                checksumok = tcph.IsCorrectChecksum(p);    
+       
+    IPHeader iph;
+          iph = p.FindHeader(Headers::IPHeader); 
+    iph.GetTotalLength(tot_len);
+  
+    data_length = (int)tot_len - 20 - (int)head_len;    
+    Buffer data;
+    if(data_length>0){
+      data = p.GetPayload().ExtractFront(data_length);
+      }
+    Connection c;                              
+    iph.GetDestIP(c.src);
+    iph.GetSourceIP(c.dest);
+    iph.GetProtocol(c.protocol);
+    tcph.GetDestPort(c.srcport);
+    tcph.GetSourcePort(c.destport);   
+    tcph.GetFlags(flags_recv);
+    tcph.GetAckNum(ack);      
+    tcph.GetSeqNum(seq);
+    /*Grabbing info for flow control*/
+    tcph.GetWinSize(send_win);  
 
-          if (event.handle == sock) {
-        // socket request or response has arrived
-          }
+    ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
+
+    if (cs != clist.end()) {   
+      if((*cs).state.GetState() == LISTEN){
+        ConnectionToStateMapping<TCPState> m;
+        m.connection = c;
+        m.state.SetState(LISTEN);
+        clist.push_back(m);
+        (*cs) = m;
+      }
+      else if((*cs).state.GetState() == CLOSED){
+        (*cs).state.SetState(LISTEN);
+
+      }   
+      received_packet(cs,mux,flags_recv,ack,seq,data_length, c.dest,c.destport,data,sock,c,send_win); //Handles a with this given state 
+    }
+    else {  
+      if(IS_SYN(flags_recv) && !IS_ACK(flags_recv)){
+        ConnectionToStateMapping<TCPState> m;
+        m.connection = c;
+        m.state.SetState(LISTEN);
+        clist.push_back(m);
+        (*cs) = m;
+        received_packet(cs,mux,flags_recv,ack,seq,data_length,c.dest,c.destport,data,sock,c,send_win);
+      } 
+    }
+
       }
 
-      if (event.eventtype == MinetEvent::Timeout) {
-          // timeout ! probably need to resend some packets
-      }
+  if (event.handle == sock) {
+    SockRequestResponse req;      
+    MinetReceive(sock, req);         
+    printf("In sock\n");    
+    switch (req.type) {
+    /*CASE: CONNECT - This is where we establish connections 
+ *      If the connection exists and closed we open it up and send a SYN packet
+ *      If the connection exists and is not closed we send error
+ *      If the connection does not exist we create it, add it to list, and send SYN*/    
+    case CONNECT: {        
+    printf("In connect\n");   
+            ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
+      if(cs != clist.end()){         
+        if((*cs).state.GetState() == CLOSED){  
+          Packet return_packet;     
+          unsigned char flags=0; SET_SYN(flags);
+          (*cs).state.SetState(SYN_SENT); 
+          client_connect_packet(return_packet, req,mux,flags,cs);
+          sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+          }
+        else{
+          sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+          }
+         }
+      else{
+        ConnectionToStateMapping<TCPState> m;  
+                  m.connection = req.connection;        
+        Packet return_packet;     
+        unsigned char flags=0; SET_SYN(flags);
+        client_connect_packet(return_packet, req,mux,flags,cs);
+        sleep(2);         
+        client_connect_packet(return_packet, req,mux,flags,cs);     
+        m.state.SetState(SYN_SENT);
+        clist.push_back(m);
+        sock_status_reply(EOK,sock,req);
+         } 
+         break;
+        }
+    /*CASE: LISTEN - We are setting up a socket to listen for connections
+ *      If connection exists and it is closed we set it to LISTEN
+ *      If connection exists and is not closed we send error
+ *      If connection does not exist we create it and set to LISTEN*/
+    case LISTEN:{        
+    printf("In listen\n");   
+        ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
+          if(cs != clist.end()){         
+        if((*cs).state.GetState() == CLOSED){  
+          (*cs).state.SetState(LISTEN);
+          sock_status_reply(EOK,sock,req);
+          }
+        else {        
+          sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+          }
+          }
+          else{ 
+        ConnectionToStateMapping<TCPState> m;  
+                  m.connection = req.connection;            
+        m.state.SetState(LISTEN);       
+        clist.push_back(m);
+        sock_status_reply(EOK,sock,req);
+        }
+      break;
+    }
+    /*CASE: WRITE - The socket wants to send data to other side of connection
+ *      If connection exists and is established we create packet with data and send it to mux
+ *      then we send a socket response up to let the app know how much data we sent
+ *      If connection exists but is not established we send error response
+ *      If connection does not exist we send error
+ *      If the amount of data we want to send is less than the senders receive window we send data normally
+ *      If it is greater than receive window we just send amount = recv window and let application resend data*/
+    case WRITE:{            
+    printf("In write\n");   
+        ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
+        if(cs != clist.end()){     
+          if((*cs).state.GetState() == ESTABLISHED){ 
+            unsigned int bytes = MIN_MACRO(536, req.data.GetSize());
+            unsigned char flags = 0;  
+            if((*cs).state.GetRwnd() > bytes){
+              Packet r(req.data.ExtractFront(bytes));
+              IPHeader ip_hdr;
+              ip_hdr.SetProtocol(IP_PROTO_TCP);     
+              ip_hdr.SetSourceIP(req.connection.src);
+                    ip_hdr.SetDestIP(req.connection.dest);
+                    ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH + bytes); 
+                    r.PushFrontHeader(ip_hdr);
+                    SET_ACK(flags);
+                    SET_PSH(flags);
+                    TCPHeader tcp_hdr;
+                    tcp_hdr.SetSourcePort(req.connection.srcport,r);
+                    tcp_hdr.SetDestPort(req.connection.destport,r);
+                    tcp_hdr.SetFlags(flags,r);
+                    tcp_hdr.SetSeqNum((*cs).state.GetLastSent(),r);           
+                    tcp_hdr.SetAckNum((*cs).state.GetLastAcked(),r);
+                    tcp_hdr.SetWinSize(1054,r);
+                    tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+                    r.PushBackHeader(tcp_hdr);
+              MinetSend(mux,r);
+              (*cs).state.SetLastSent((*cs).state.GetLastSent() + bytes);
+              SockRequestResponse repl;
+                                    repl.type = STATUS; 
+              repl.connection = req.connection; 
+              repl.bytes = bytes; 
+              repl.error = EOK; 
+              MinetSend(sock, repl);
+            }
+            else{
+              bytes = (*cs).state.GetRwnd();  
+              Packet r(req.data.ExtractFront(bytes));
+              IPHeader ip_hdr;
+              ip_hdr.SetProtocol(IP_PROTO_TCP);     
+              ip_hdr.SetSourceIP(req.connection.src);
+                    ip_hdr.SetDestIP(req.connection.dest);
+                    ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH + bytes); 
+                    r.PushFrontHeader(ip_hdr);
+                    SET_ACK(flags);
+                    SET_PSH(flags);
+                    TCPHeader tcp_hdr;
+                    tcp_hdr.SetSourcePort(req.connection.srcport,r);
+                    tcp_hdr.SetDestPort(req.connection.destport,r);
+                    tcp_hdr.SetFlags(flags,r);
+                    tcp_hdr.SetSeqNum((*cs).state.GetLastSent(),r);           
+                    tcp_hdr.SetAckNum((*cs).state.GetLastAcked(),r);
+                    tcp_hdr.SetWinSize(1054,r);
+                    tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+                    r.PushBackHeader(tcp_hdr);
+              MinetSend(mux,r);
+              (*cs).state.SetLastSent((*cs).state.GetLastSent() + bytes);
+              SockRequestResponse repl;
+                                    repl.type = STATUS; 
+              repl.connection = req.connection; 
+              repl.bytes = bytes; 
+              repl.error = EOK; 
+              MinetSend(sock, repl);
+            }
+          }
+          else {  
+            sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+
+          }
+         }
+         else{    
+        sock_status_reply(ENOMATCH,sock,req);
+         }
+      break;
+    }
+    /*CASE: FORWARD - We do not encounter this case so we ignore it*/
+    case FORWARD: {       
+      break;
+    }
+    /*CASE: STATUS - We receive how many bytes was sent up to the socket
+ *      This is where we add flow congestion */
+    case STATUS: {
+      break;
+    }
+    case CLOSE: {
+        printf("IN CLOSE CASE \n");
+          ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
+          if(cs != clist.end()){         
+          if((*cs).state.GetState() == ESTABLISHED){  
+            
+            printf("Preparing FIN ACK to be sent \n");  
+            unsigned char flags = 0;  
+            Packet r;
+            IPHeader ip_hdr;
+            ip_hdr.SetProtocol(IP_PROTO_TCP);     
+            ip_hdr.SetSourceIP(req.connection.src);
+                  ip_hdr.SetDestIP(req.connection.dest);
+                  ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
+                  r.PushFrontHeader(ip_hdr);
+            SET_FIN(flags); SET_ACK(flags);
+                  TCPHeader tcp_hdr;
+                  tcp_hdr.SetSourcePort(req.connection.srcport,r);
+                  tcp_hdr.SetDestPort(req.connection.destport,r);
+                  tcp_hdr.SetFlags(flags,r);
+                  tcp_hdr.SetSeqNum((*cs).state.GetLastSent(),r);           
+                  tcp_hdr.SetAckNum((*cs).state.GetLastAcked(),r);
+                  tcp_hdr.SetWinSize(1054,r);
+                  tcp_hdr.SetHeaderLen(TCP_HEADER_BASE_LENGTH,r);
+                  r.PushBackHeader(tcp_hdr);
+            MinetSend(mux,r);
+            (*cs).state.SetLastSent((*cs).state.GetLastSent() + 1);
+            
+            SockRequestResponse repl;
+                                  repl.type = STATUS; 
+            repl.connection = req.connection; 
+            repl.bytes = 0; 
+            repl.error = EOK; 
+            MinetSend(sock, repl);
+            (*cs).state.SetState(FIN_WAIT1);
+
+
+            
+          }
+          else {  
+            sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+          }
+         }
+      else{ 
+        sock_status_reply(ENOMATCH,sock,req);
+        }
+      break;
+    }
+    default: {
+      printf("we defaulted \n Which sucks cause I don't know what it means \n");
+      break;
+    }
+
+        }//ends swqitch
+
+     }//ends sock
+  
+  }
+  if (event.eventtype == MinetEvent::Timeout) {
+      // timeout ! probably need to resend some packets
+      //DONT WORRY ABOUT TIME OUTS! 
+     
+  }
 
     }
 
@@ -151,184 +588,3 @@ int main(int argc, char * argv[]) {
 
     return 0;
 }
-
-
-//---------------------------------------------------------------------------------
-//-- handlePacket
-//-----(mux, incoming packet, header size)
-//---------------------------------------------------------------------------------
-
-void handlePacket(MinetHandle mux, Packet p, unsigned char header_size){
-
-  Packet p_out;
-  int data_size = 0;
-  unsigned short dest_port, src_port;
-  unsigned short win = 1000; 
-  unsigned short total_size = 0;
-  bool checksum;
-  unsigned int seq = 0;
-  unsigned int ack = 0;
-  unsigned char flags = 0;
-  unsigned char flags_recv = 0;  
-  unsigned char protocol;
-  IPAddress dest_IP;
-  IPAddress src_IP = MyIPAddr();
-  IPHeader iph_out;
-  TCPHeader tcp_out;
-
-  printf("about to enter retrieve tcp header\n");
-  //data_size is temporarily storing the tcp header size, then passed into retrieveIPheader to get data size
-  checksum = retrieveTCPHeaderData(p, &dest_port, &src_port, &seq, &ack, &flags_recv);
-  printf("header size handler: %i \n",total_size);
-  dest_IP = retrieveIPHeaderData(p, &protocol, &total_size);
-  printf("total size handler: %u \n",total_size);
-
-  data_size = (int)total_size - 20 - header_size;
-  printf("data size: %i \n",data_size);
-
-
-  tcp_out = setupTCPHeader(p_out, win, ack+1, seq, src_port, dest_port, flags);
-  iph_out = setupIPHeader(dest_IP); 
-
-  p_out.PushFrontHeader(iph_out); 
-
-  printf("got to the switch\n");
-  switch(state)
-  {
-
-    //--CLIENT STATE---------------------------------------------------------------
-
-    case SYN_SENT://looking for a SYN/ACK (client side only)
-    {
-      if(IS_SYN(flags_recv) && IS_ACK(flags_recv)){ //respond with ACK
-
-        printf("The packet we received is a SYN ACK PACKET\n");
-        SET_ACK(flags);
-
-        p_out.PushBackHeader(tcp_out);               
-        MinetSend(mux,p_out); 
-
-        state = ESTABLISHED;
-      }
-    }break;
-
-
-    //--SERVER STATES--------------------------------------------------------------
-
-    case LISTEN://looking for a SYN (server side only)
-    {
-      if(IS_SYN(flags_recv)){ //respond with SYN/ACK
-
-        printf("We got a SYN packet!!\n");
-        SET_SYN(flags);
-        SET_ACK(flags);
-
-        p_out.PushBackHeader(tcp_out);               
-        MinetSend(mux,p_out); 
-
-        state = SYN_RCVD;
-      }  
-    }break;
-
-    case SYN_RCVD://looking for ack
-    {
-      if(IS_ACK(flags_recv)){
-
-        printf("we got an ACK packet!!");
-        state = ESTABLISHED;
-
-        //if we recieved data, respond
-        if(data_size>0){
-          printf("data recieved, responding");
-
-          p_out.PushBackHeader(tcp_out);  
-
-        }
-
-      }
-    }break;
-
-    //--GENERAL STATES-------------------------------------------------------------
-    
-    case ESTABLISHED://looking for packets with data
-    {
-        if(data_size>0){
-          printf("data recieved, responding");
-
-          p_out.PushBackHeader(tcp_out);  
-          
-        }
-    }break;
-  }
-}
-
-
-//---------------------------------------------------------------------------------
-//-- retrieveTCPHeaderData
-//-----(recieved packet, source port, destination port, sequence number, ack number, flags, header size)
-//---------------------------------------------------------------------------------
-
-bool retrieveTCPHeaderData(Packet p, unsigned short *src_port, unsigned short *dest_port, unsigned int *seq, unsigned int *ack, unsigned char *flags_recv){
-  TCPHeader tcph = p.FindHeader(Headers::TCPHeader);   // retrieve the udp header from the packet
-  bool checksum = tcph.IsCorrectChecksum(p);    // verify the checksum is correct
-
-  tcph.GetAckNum(*seq);
-  tcph.GetSeqNum(*ack);
-  tcph.GetDestPort(*src_port);
-  tcph.GetSourcePort(*dest_port);
-  tcph.GetFlags(*flags_recv);  
-
-  return checksum;
-}
-//---------------------------------------------------------------------------------
-//-- setupTCPHeader
-//-----(outgoing packet, )
-//-----RETURN: partially constructed IP Header
-//---------------------------------------------------------------------------------
-TCPHeader setupTCPHeader(Packet p, unsigned short win, unsigned int ack, unsigned int seq, unsigned short src_port, unsigned short dest_port, unsigned char flags){
-  TCPHeader tcph;
-
-  tcph.SetWinSize(win,p);
-  tcph.SetAckNum(ack,p);
-  tcph.SetSeqNum(seq,p);
-  tcph.SetSourcePort(src_port,p);
-  tcph.SetDestPort(dest_port,p);
-  tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH,p);
-  tcph.SetFlags(flags,p);
-
-  return tcph;
-} 
-
-
-//---------------------------------------------------------------------------------
-//-- retrieveIPHeaderData
-//-----(recieved packet, protocol used, size of the tcp header)
-//-----RETURN: source IP of the packet (terrible workaround... fix if time)
-//---------------------------------------------------------------------------------
-
-IPAddress retrieveIPHeaderData(Packet p, unsigned char *protocol, unsigned short *total_size){
-  IPHeader iph = p.FindHeader(Headers::IPHeader);     // retrieve the ip header from the packet
-  IPAddress srcIP;
-
-  iph.GetSourceIP(srcIP);
-  iph.GetProtocol(*protocol);
-  iph.GetTotalLength(*total_size);  
-
-  return srcIP;
-}
-//---------------------------------------------------------------------------------
-//-- setupIPHeader
-//-----(destination IP)
-//-----RETURN: partially constructed IP header
-//---------------------------------------------------------------------------------
-IPHeader setupIPHeader(IPAddress dest_IP){
-  IPHeader iph;
-  //Change to push the IP on first    
-  iph.SetDestIP(dest_IP);
-  iph.SetSourceIP(MyIPAddr()); //always going to be my ip
-  iph.SetProtocol(IP_PROTO_TCP); //always TCP
-  iph.SetTotalLength(TCP_HEADER_BASE_LENGTH+IP_HEADER_BASE_LENGTH);
-  
-  return iph;
-}
-   
