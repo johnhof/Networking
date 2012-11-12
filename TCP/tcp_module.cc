@@ -29,7 +29,7 @@ using namespace std;
 //--SOCKET STATUS REPLY
 //------------------------------------------------------------------------------------------------------------------
 
-void sock_status_reply(int error, MinetHandle sock, SockRequestResponse req){
+void sockStatReply(int error, MinetHandle sock, SockRequestResponse req){
    SockRequestResponse repl; 
    repl.type = STATUS;         
     repl.connection = req.connection; 
@@ -47,9 +47,9 @@ void sock_status_reply(int error, MinetHandle sock, SockRequestResponse req){
 //--PACKET HANDLER
 //------------------------------------------------------------------------------------------------------------------
 
-void received_packet( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsigned char flags_recv, unsigned int ack, unsigned int seq, int data_length, IPAddress dest, unsigned short destport,Buffer x,MinetHandle sock, Connection conn, unsigned short sendwin){
-
+void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsigned char flags_recv, unsigned int ack, unsigned int seq, int data_length, IPAddress dest, unsigned short destport,Buffer x,MinetHandle sock, Connection conn, unsigned short sendwin){
   unsigned char flags = 0; 
+
   switch((*cs).state.GetState())
   {   
 
@@ -58,7 +58,6 @@ void received_packet( ConnectionList<TCPState>::iterator cs, MinetHandle mux, un
     {
       if(IS_SYN(flags_recv) && IS_ACK(flags_recv))
       {  
-        printf("Got a SYN_ACK\n");
         Packet outgoing_packet;
         SET_ACK(flags);
 
@@ -220,8 +219,19 @@ void received_packet( ConnectionList<TCPState>::iterator cs, MinetHandle mux, un
       }
       if(data_length > 0)
       {
+        //REMOVE ME?
         SockRequestResponse write(WRITE,(*cs).connection,x,data_length, EOK);
         MinetSend(sock,write);  
+
+    //if this seq is not what we are expecting, resend a request for the last acked packet (Go-Back-N)
+    if(ack != (*cs).state.GetLastSent())
+    {    
+        printf("\nGO-BACK-N\nacked: %i\nseqed: %i\nexpected ack: %i\nexpected seq%i", ack, seq, (*cs).state.GetLastSent(), (*cs).state.GetLastAcked());
+        //these are switched on header construction
+        ack = (*cs).state.GetLastSent();
+        seq = (*cs).state.GetLastAcked();
+        data_length = 0;
+      }
 
         Packet outgoing_packet;
         SET_ACK(flags);
@@ -236,7 +246,8 @@ void received_packet( ConnectionList<TCPState>::iterator cs, MinetHandle mux, un
 
         TCPHeader tcp_hdr;
         tcp_hdr.SetSourcePort((*cs).connection.srcport,outgoing_packet);
-        tcp_hdr.SetDestPort(destport,outgoing_packet);        tcp_hdr.SetFlags(flags,outgoing_packet);  
+        tcp_hdr.SetDestPort(destport,outgoing_packet);        
+        tcp_hdr.SetFlags(flags,outgoing_packet);  
         tcp_hdr.SetSeqNum(ack,outgoing_packet);   
         tcp_hdr.SetAckNum(seq+data_length,outgoing_packet);   
         tcp_hdr.SetWinSize(1024,outgoing_packet);
@@ -404,7 +415,7 @@ int main(int argc, char * argv[]) {
           {
             (*cs).state.SetState(LISTEN);
           }   
-          received_packet(cs,mux,flags_recv,ack,seq,data_length, c.dest,c.destport,data,sock,c,send_win); //Handles a with this given state 
+          packetHandler(cs,mux,flags_recv,ack,seq,data_length, c.dest,c.destport,data,sock,c,send_win); //Handles a with this given state 
         }
         else 
         {  
@@ -415,7 +426,7 @@ int main(int argc, char * argv[]) {
             m.state.SetState(LISTEN);
             clist.push_back(m);
             (*cs) = m;
-            received_packet(cs,mux,flags_recv,ack,seq,data_length,c.dest,c.destport,data,sock,c,send_win);
+            packetHandler(cs,mux,flags_recv,ack,seq,data_length,c.dest,c.destport,data,sock,c,send_win);
           } 
         }
 
@@ -446,10 +457,10 @@ int main(int argc, char * argv[]) {
 
                 (*cs).state.SetState(SYN_SENT); 
                 client_connect_packet(return_packet, req,mux,flags,cs);
-                sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+                sockStatReply(ERESOURCE_UNAVAIL,sock,req);
               }
               else{
-                sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+                sockStatReply(ERESOURCE_UNAVAIL,sock,req);
               }
             }
             else
@@ -465,7 +476,7 @@ int main(int argc, char * argv[]) {
               client_connect_packet(return_packet, req,mux,flags,cs);     
               m.state.SetState(SYN_SENT);
               clist.push_back(m);
-              sock_status_reply(EOK,sock,req);
+              sockStatReply(EOK,sock,req);
             } 
             break;
           }
@@ -473,26 +484,27 @@ int main(int argc, char * argv[]) {
 //--LISTEN-----------------------------------------------------------------------------------------------------
           case LISTEN:
           {        
+            printf("\nsocket listen\n");
             ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
             if(cs != clist.end())
             {         
               if((*cs).state.GetState() == CLOSED)
               {  
                 (*cs).state.SetState(LISTEN);
-                sock_status_reply(EOK,sock,req);
+                sockStatReply(EOK,sock,req);
               }
               else 
               {        
-                sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+                sockStatReply(ERESOURCE_UNAVAIL,sock,req);
               }
             }
             else
             { 
               ConnectionToStateMapping<TCPState> m;  
-                        m.connection = req.connection;            
+               m.connection = req.connection;            
               m.state.SetState(LISTEN);       
               clist.push_back(m);
-              sock_status_reply(EOK,sock,req);
+              sockStatReply(EOK,sock,req);
             }
             break;
           }
@@ -509,6 +521,7 @@ int main(int argc, char * argv[]) {
                   unsigned char flags = 0;  
                   if((*cs).state.GetRwnd() > bytes)
                   {
+            printf("\nestablished, GetRwnd\n");
                     Packet outgoing_packet(req.data.ExtractFront(bytes));
                     SET_ACK(flags);
                     SET_PSH(flags);
@@ -542,6 +555,7 @@ int main(int argc, char * argv[]) {
                   }
                   else
                   {
+            printf("\nestablished other\n");
                     bytes = (*cs).state.GetRwnd();  
                     Packet outgoing_packet(req.data.ExtractFront(bytes));
                     SET_ACK(flags);
@@ -577,12 +591,12 @@ int main(int argc, char * argv[]) {
                 }
                 else
                 {  
-                  sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+                  sockStatReply(ERESOURCE_UNAVAIL,sock,req);
                 }
               }
               else
               {    
-                sock_status_reply(ENOMATCH,sock,req);
+                sockStatReply(ENOMATCH,sock,req);
               }
             break;
           }
@@ -637,22 +651,18 @@ int main(int argc, char * argv[]) {
                 }
                 else 
                 {  
-                  sock_status_reply(ERESOURCE_UNAVAIL,sock,req);
+                  sockStatReply(ERESOURCE_UNAVAIL,sock,req);
                 }
               }
               else
               { 
-                sock_status_reply(ENOMATCH,sock,req);
+                sockStatReply(ENOMATCH,sock,req);
               }
             break;
           }
 
 //--DEFAULT-----------------------------------------------------------------------------------------------------
-          default: 
-          {
-            printf("we defaulted \n Which sucks cause I don't know what it means \n");
-            break;
-          }
+          default: {break;}
 
         }//END SWITCH STATEMENT
 
@@ -660,9 +670,7 @@ int main(int argc, char * argv[]) {
   
     }//END DATAFLOW/IN EVENT
 
-    if (event.eventtype == MinetEvent::Timeout) {
-      //TODO: Go-Back-N?
-    }//END TIMEOUT EVENT
+    if (event.eventtype == MinetEvent::Timeout) {break;}//END TIMEOUT EVENT
   }//END EVENT LOOP
 
   MinetDeinit();
