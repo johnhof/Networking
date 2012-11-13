@@ -92,16 +92,8 @@ void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsi
     }
 
 //---FIN WAITS------------------------------------------------------------------------------------------------------
-    case FIN_WAIT1:
-    { 
-      printf("\nin FIN_WAIT1\n");
-      break;
-    }
-    case FIN_WAIT2:
-    { 
-      printf("\nin FIN_WAIT2\n");
-      break;
-    }
+    case FIN_WAIT1: {break;}
+    case FIN_WAIT2: {break;}
 
 //---LISTEN---------------------------------------------------------------------------------------------------------
     case LISTEN:
@@ -158,27 +150,19 @@ void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsi
 //---CLOSING--------------------------------------------------------------------------------------------------------
     case CLOSING:
     {
-      printf("\nin CLOSING\n");
       if(IS_ACK(flags_recv))
       {
         (*cs).state.SetState(CLOSED);
       }
       break;
     }
-    case CLOSE_WAIT:
-    {
-      printf("\nin CLOSE_WAIT\n");
-      break;
-    }
+    case CLOSE_WAIT:{break;}
     case LAST_ACK: 
     {
-
-      printf("\nin LAST_ACK\n");
       if(IS_ACK(flags_recv))
       {
         (*cs).state.SetState(CLOSED);
       }
-      break;
       break;
     } 
 
@@ -219,19 +203,8 @@ void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsi
       }
       if(data_length > 0)
       {
-        //REMOVE ME?
         SockRequestResponse write(WRITE,(*cs).connection,x,data_length, EOK);
         MinetSend(sock,write);  
-
-    //if this seq is not what we are expecting, resend a request for the last acked packet (Go-Back-N)
-    if(ack != (*cs).state.GetLastSent())
-    {    
-        printf("\nGO-BACK-N\nacked: %i\nseqed: %i\nexpected ack: %i\nexpected seq%i", ack, seq, (*cs).state.GetLastSent(), (*cs).state.GetLastAcked());
-        //these are switched on header construction
-        ack = (*cs).state.GetLastSent();
-        seq = (*cs).state.GetLastAcked();
-        data_length = 0;
-      }
 
         Packet outgoing_packet;
         SET_ACK(flags);
@@ -242,7 +215,6 @@ void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsi
         ip_hdr.SetDestIP(dest);
         ip_hdr.SetTotalLength(IP_HEADER_BASE_LENGTH +  TCP_HEADER_BASE_LENGTH); 
         outgoing_packet.PushFrontHeader(ip_hdr);
-
 
         TCPHeader tcp_hdr;
         tcp_hdr.SetSourcePort((*cs).connection.srcport,outgoing_packet);
@@ -276,9 +248,8 @@ void packetHandler( ConnectionList<TCPState>::iterator cs, MinetHandle mux, unsi
 //--CLIENT CONNECT
 //------------------------------------------------------------------------------------------------------------------
 
-void client_connect_packet(Packet outgoing_packet, SockRequestResponse c, MinetHandle mux, unsigned char flags ,ConnectionList<TCPState>::iterator cs){ 
-  
-  
+void client_connect_packet(Packet outgoing_packet, SockRequestResponse c, MinetHandle mux, unsigned char flags ,ConnectionList<TCPState>::iterator cs)
+{  
   unsigned int seq = 47;    //should be random
   unsigned int ack = 0;   //should also be random
   unsigned short win_size = 500;  
@@ -310,7 +281,8 @@ void client_connect_packet(Packet outgoing_packet, SockRequestResponse c, MinetH
 //--MAIN
 //------------------------------------------------------------------------------------------------------------------
 
-int main(int argc, char * argv[]) {
+int main(int argc, char * argv[]) 
+{
   MinetHandle mux;
   MinetHandle sock;
     
@@ -446,7 +418,7 @@ int main(int argc, char * argv[]) {
 //--CONNECT----------------------------------------------------------------------------------------------------
           case CONNECT: 
           {        
-                  ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
+            ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
             if(cs != clist.end())
             {         
               if((*cs).state.GetState() == CLOSED)
@@ -484,7 +456,6 @@ int main(int argc, char * argv[]) {
 //--LISTEN-----------------------------------------------------------------------------------------------------
           case LISTEN:
           {        
-            printf("\nsocket listen\n");
             ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
             if(cs != clist.end())
             {         
@@ -521,7 +492,6 @@ int main(int argc, char * argv[]) {
                   unsigned char flags = 0;  
                   if((*cs).state.GetRwnd() > bytes)
                   {
-            printf("\nestablished, GetRwnd\n");
                     Packet outgoing_packet(req.data.ExtractFront(bytes));
                     SET_ACK(flags);
                     SET_PSH(flags);
@@ -555,7 +525,6 @@ int main(int argc, char * argv[]) {
                   }
                   else
                   {
-            printf("\nestablished other\n");
                     bytes = (*cs).state.GetRwnd();  
                     Packet outgoing_packet(req.data.ExtractFront(bytes));
                     SET_ACK(flags);
@@ -608,14 +577,11 @@ int main(int argc, char * argv[]) {
 //--CLOSE------------------------------------------------------------------------------------------------------
           case CLOSE: 
           {
-              printf("IN CLOSE CASE \n");
               ConnectionList<TCPState>::iterator cs = clist.FindMatching(req.connection);
               if(cs != clist.end())
               {         
                 if((*cs).state.GetState() == ESTABLISHED)
                 {  
-                  
-                  printf("Preparing FIN ACK to be sent \n");  
                   unsigned char flags = 0;  
                   Packet outgoing_packet;
                   SET_FIN(flags); 
@@ -670,7 +636,7 @@ int main(int argc, char * argv[]) {
   
     }//END DATAFLOW/IN EVENT
 
-    if (event.eventtype == MinetEvent::Timeout) {break;}//END TIMEOUT EVENT
+    if (event.eventtype == MinetEvent::Timeout) {}//END TIMEOUT EVENT
   }//END EVENT LOOP
 
   MinetDeinit();
