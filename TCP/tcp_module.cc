@@ -37,7 +37,7 @@ void sockStatReply(int error, MinetHandle sock, SockRequestResponse req){
     repl.bytes = 0;
     MinetSend(sock,repl);
 
-}//END STATUS REPKLY
+}//END STATUS REPLY
 
 
 
